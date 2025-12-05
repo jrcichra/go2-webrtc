@@ -6,4 +6,5 @@ pygame
 wasmtime
 pycryptodome
 requests
+cryptography
 

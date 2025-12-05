@@ -38,6 +38,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 from Crypto.Cipher import PKCS1_v1_5
 import requests
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 # from go2_webrtc.go2_cv_video import Go2CvVideo
@@ -54,6 +55,32 @@ from go2_webrtc.lidar_decoder import LidarDecoder
 
 
 load_dotenv()
+
+
+def decrypt_con_notify_data(encrypted_b64: str) -> str:
+    """
+    Decrypt the data1 field from con_notify response when data2=2.
+    Uses AES-GCM with a hardcoded key.
+    
+    Data structure:
+    - ciphertext: data[:-28]
+    - nonce (12 bytes): data[-28:-16]
+    - tag (16 bytes): data[-16:]
+    """
+    key = bytes([232, 86, 130, 189, 22, 84, 155, 0, 142, 4, 166, 104, 43, 179, 235, 227])
+    
+    data = base64.b64decode(encrypted_b64)
+    
+    if len(data) < 28:
+        raise ValueError("Decryption failed: input data too short")
+    
+    tag = data[-16:]
+    nonce = data[-28:-16]
+    ciphertext = data[:-28]
+    
+    aesgcm = AESGCM(key)
+    plaintext = aesgcm.decrypt(nonce, ciphertext + tag, None)
+    return plaintext.decode('utf-8')
 
 
 logging.basicConfig(level=logging.WARN)
@@ -251,8 +278,13 @@ class Go2Connection:
             # Parse the decoded response as JSON
             decoded_json = json.loads(decoded_response)
 
-            # Extract the 'data1' field from the JSON
+            # Extract the 'data1' and 'data2' fields from the JSON
             data1 = decoded_json.get("data1")
+            data2 = decoded_json.get("data2", 1)
+
+            # Decrypt data1 if protocol version is 2 (firmware 1.1.8+)
+            if data2 == 2:
+                data1 = decrypt_con_notify_data(data1)
 
             # Extract the public key from 'data1'
             public_key_pem = data1[10 : len(data1) - 10]
@@ -369,7 +401,7 @@ class Go2Connection:
                     arrayList.append(index)
                 except ValueError:
                     # Handle case where the character is not found in strArr
-                    print(f"Character {second_char} not found in strArr.")
+                    logger.warning(f"Character {second_char} not found in strArr.")
 
         # Convert arrayList to a string without separators
         joinToString = "".join(map(str, arrayList))
