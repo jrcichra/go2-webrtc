@@ -254,11 +254,6 @@ class WebXRController {
   }
 
   updateJoystickMovement() {
-    if (!this.isConnected || !this.rtc) {
-      this.vrLog("Joystick: Not connected");
-      return;
-    }
-
     // Get WebXR input sources (like vr-dungeon does)
     const session = this.renderer.xr.getSession();
     if (!session) {
@@ -344,13 +339,13 @@ class WebXRController {
       }
     }
 
-    // Only send movement if there's significant input
+    // Only log movement if there's significant input
     if (
       Math.abs(leftStickX) > 0.1 ||
       Math.abs(leftStickY) > 0.1 ||
       Math.abs(rightStickX) > 0.1
     ) {
-      // RATE LIMITING: Only send every 100ms to match desktop behavior
+      // RATE LIMITING: Only log every 100ms to avoid spam
       const now = Date.now();
       if (now - this.lastMovementTime < 100) {
         return;
@@ -421,12 +416,6 @@ class WebXRController {
         this.vrLog(`[RTC] ${msg}`);
       };
 
-      // CRITICAL: Create video and audio elements BEFORE WebRTC connection
-      // The go2webrtc.js validation callback checks for these elements
-      // and only sends the video/audio "on" messages if they exist
-      this.ensureVideoElement();
-      this.ensureAudioElement();
-
       this.vrLog("Initializing WebRTC...");
       // CRITICAL: Connect to SIGNALING server at computer IP (10.0.0.43)
       // but target ROBOT at robot IP (10.0.0.207)
@@ -495,24 +484,17 @@ class WebXRController {
       monitorChannel(); // Check immediately
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
-      // Wait a bit for validation to complete, then manually enable video and put robot in control mode
+      // Wait a bit for validation to complete, then put robot in control mode
       setTimeout(() => {
-        console.log("Manually enabling video and audio streams for VR");
-        // Manually send video "on" message in case validation missed it
+        console.log("Putting robot in control mode for VR");
+        // Put robot in stand up mode for movement
         if (this.rtc.channel && this.rtc.channel.readyState === "open") {
-          this.rtc.publish("", "on", 1); // DataChannelType.VID = 1
-          // Put robot in stand up mode for movement
           this.rtc.publishApi("rt/api/sport/request", 1004, ""); // StandUp
           this.vrLog("Sent StandUp command");
         } else {
-          this.vrLog("Cannot send VID: Channel not open");
+          this.vrLog("Cannot send StandUp: Channel not open");
         }
-        // Skip audio for now
-        // this.rtc.publish("", "on", 2); // DataChannelType.AUD = 2
       }, 1000);
-
-      // Set up video feed on VR screen
-      this.setupVideoTexture();
 
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`
@@ -529,62 +511,22 @@ class WebXRController {
     }
   }
 
-  ensureVideoElement() {
-    // Create video element if it doesn't exist
-    // This MUST exist before WebRTC validation happens
-    let videoElement = document.getElementById("video-frame");
-    if (!videoElement) {
-      console.log("Creating video-frame element for VR");
-      videoElement = document.createElement("video");
-      videoElement.id = "video-frame";
-      videoElement.autoplay = true;
-      videoElement.muted = true;
-      videoElement.playsInline = true;
-      videoElement.style.display = "none";
-      document.body.appendChild(videoElement);
-    }
-    return videoElement;
-  }
-
-  ensureAudioElement() {
-    // Create audio element if it doesn't exist
-    // This MUST exist before WebRTC validation happens for audio "on" message
-    let audioElement = document.getElementById("audio-frame");
-    if (!audioElement) {
-      console.log("Creating audio-frame element for VR");
-      audioElement = document.createElement("audio");
-      audioElement.id = "audio-frame";
-      audioElement.autoplay = true;
-      audioElement.style.display = "none";
-      document.body.appendChild(audioElement);
-    }
-    return audioElement;
-  }
-
   render(timestamp, frame) {
     if (!frame) return;
 
     // Check if we just entered VR mode and connect to robot
     if (this.renderer.xr.isPresenting && !this.isConnected && !this.rtc) {
       this.connectToRobot();
-      // Enable passthrough background in VR
+    }
+
+    // Enable passthrough background in VR
+    if (this.renderer.xr.isPresenting && this.scene.background !== null) {
       this.scene.background = null;
     }
 
     // Switch back to dark background when exiting VR
     if (!this.renderer.xr.isPresenting && this.scene.background === null) {
       this.scene.background = new THREE.Color(0x1f1f1f);
-    }
-
-    // CRITICAL: Ensure video is playing and texture updates
-    const videoElement = document.getElementById("video-frame");
-    if (videoElement) {
-      if (videoElement.paused) {
-        videoElement.play().catch((e) => {}); // Force play if paused
-      }
-    }
-    if (this.videoTexture) {
-      this.videoTexture.needsUpdate = true;
     }
 
     // Update joystick input
@@ -624,70 +566,6 @@ class WebXRController {
     // Update debug panel with scrolling logs
     const debugText = "DEBUG LOG\n" + this.debugLogs.join("\n");
     this.updateDebugPanel(debugText);
-  }
-
-  setupVideoTexture() {
-    if (!this.rtc || !this.videoScreen) return;
-
-    // Wait for video track to be available
-    const checkForVideo = () => {
-      if (
-        this.rtc.VidTrackEvent &&
-        this.rtc.VidTrackEvent.streams &&
-        this.rtc.VidTrackEvent.streams[0]
-      ) {
-        const videoStream = this.rtc.VidTrackEvent.streams[0];
-
-        // Get video element (should already exist from ensureVideoElement)
-        const videoElement = document.getElementById("video-frame");
-        if (!videoElement) {
-          console.error("Video element not found! This should not happen.");
-          return;
-        }
-
-        // Set video stream
-        videoElement.srcObject = videoStream;
-
-        // Wait for video to actually start playing before creating texture
-        const onVideoPlaying = () => {
-          console.log("Video playing, creating VR texture");
-
-          // Create video texture for VR screen with proper format
-          const videoTexture = new THREE.VideoTexture(videoElement);
-          videoTexture.minFilter = THREE.LinearFilter;
-          videoTexture.magFilter = THREE.LinearFilter;
-          videoTexture.format = THREE.RGBAFormat; // Use RGBA for video
-          videoTexture.colorSpace = THREE.SRGBColorSpace;
-
-          // Update the video screen material to show the video
-          this.videoScreen.material = new THREE.MeshBasicMaterial({
-            map: videoTexture,
-            transparent: false,
-          });
-
-          // Store texture reference for updates
-          this.videoTexture = videoTexture;
-
-          console.log("Video texture set up on VR screen");
-        };
-
-        // Listen for playing event
-        videoElement.addEventListener("playing", onVideoPlaying, {
-          once: true,
-        });
-
-        // Force play in case autoplay doesn't trigger
-        videoElement.play().catch((e) => {
-          console.log("Video play failed, will retry:", e);
-          setTimeout(() => videoElement.play(), 500);
-        });
-      } else {
-        // Retry after a short delay
-        setTimeout(checkForVideo, 500);
-      }
-    };
-
-    checkForVideo();
   }
 
   updateStatusPanel(text) {
