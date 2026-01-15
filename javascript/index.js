@@ -53,8 +53,9 @@ async function handleConnectClick() {
   // Save the values to localStorage
   saveValuesToLocalStorage();
 
-  // Initialize RTC
-  globalThis.rtc = new Go2WebRTC(token, robotIP);
+  // Initialize RTC - connect to signaling server at 10.0.0.229
+  const signalingServer = "10.0.0.229";
+  globalThis.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
 
   // Enable microphone before creating offer
   try {

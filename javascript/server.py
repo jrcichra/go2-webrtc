@@ -26,6 +26,7 @@ import socketserver
 import json
 import os
 import sys
+import ssl
 
 path_to_add = os.path.abspath(os.path.join(os.path.dirname(__file__), "../python"))
 if os.path.exists(path_to_add):
@@ -37,6 +38,7 @@ else:
 import go2_webrtc
 
 PORT = 8081
+
 
 class SDPDict:
     def __init__(self, existing_dict):
@@ -50,12 +52,20 @@ class SDPDict:
 
 
 class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Add no-cache headers to all responses
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_OPTIONS(self):
         # Handle CORS preflight request
         self.send_response(200, "ok")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
     def do_POST(self):
@@ -78,14 +88,19 @@ class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
 
             self.wfile.write(json.dumps(response_data).encode("utf-8"))
 
 
-# Set up the server
+# Set up the server with HTTPS
 with socketserver.TCPServer(("", PORT), CORSRequestHandler) as httpd:
-    print(f"Serving on port {PORT}")
+    # Wrap the socket with SSL
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
+    httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
+    
+    print(f"Serving on HTTPS port {PORT}")
+    print("Using self-signed certificate - you'll need to accept security warning in browser")
     httpd.serve_forever()
-
-

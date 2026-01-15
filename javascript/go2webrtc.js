@@ -8,10 +8,13 @@ function logMessage(text) {
 }
 
 export class Go2WebRTC {
-  constructor(token, robotIP, messageCallback) {
+  constructor(token, robotIP, messageCallback, signalingServerIP = null) {
     this.token = token;
     this.robotIP = robotIP;
     this.messageCallback = messageCallback;
+    // Use provided signaling server IP or fall back to current hostname
+    // This allows bypassing CF tunnel for WebRTC while serving page through CF
+    this.signalingServerIP = signalingServerIP || window.location.hostname;
 
     this.msgCallbacks = new Map();
     this.validationResult = "PENDING";
@@ -101,7 +104,7 @@ export class Go2WebRTC {
       body: JSON.stringify(answer),
     };
 
-    fetch(`http://${window.location.hostname}:8081/offer`, options)
+    fetch(`https://${this.signalingServerIP}:8081/offer`, options)
       .then((response) => {
         console.log(`statusCode: ${response.status}`);
         return response.json();

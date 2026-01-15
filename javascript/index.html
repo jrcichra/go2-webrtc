@@ -72,6 +72,9 @@
         height: auto;
         margin-left: 20px; /* Add some space between the input controls and video frame */
       }
+      canvas {
+        display: none !important; /* Hide the Three.js canvas - we only use it for VR */
+      }
       .corner-div {
         position: fixed;
         width: 200px;
@@ -94,8 +97,17 @@
         right: 0;
       }
     </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.156.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.156.0/examples/jsm/"
+        }
+      }
+    </script>
     <script src="md5.js"></script>
     <script src="joy.min.js"></script>
+    <script type="module" src="webxr.js"></script>
   </head>
   <body>
     <div class="container">
@@ -120,10 +132,18 @@
           <button id="connect-btn" class="button-primary">Connect</button>
           <button id="execute-btn" class="button-primary">Execute</button>
         </div>
-        <div class="input-group" style="margin-top: 15px;">
+        <div class="input-group" style="margin-top: 15px">
           <label for="robot-volume">Robot Audio Volume:</label>
-          <input type="range" id="robot-volume" min="0" max="1" step="0.1" value="1" style="margin-left: 10px; width: 100px;" />
-          <span id="robot-volume-value" style="margin-left: 10px;">100%</span>
+          <input
+            type="range"
+            id="robot-volume"
+            min="0"
+            max="1"
+            step="0.1"
+            value="1"
+            style="margin-left: 10px; width: 100px"
+          />
+          <span id="robot-volume-value" style="margin-left: 10px">100%</span>
         </div>
       </div>
       <div>
