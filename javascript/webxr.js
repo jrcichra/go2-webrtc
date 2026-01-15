@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFa
 import { Go2WebRTC } from "./go2webrtc.js";
 
 // Version number for cache busting verification
-const WEBXR_VERSION = 13;
+const WEBXR_VERSION = 14;
 
 class WebXRController {
   constructor() {
@@ -397,9 +397,9 @@ class WebXRController {
       this.ensureVideoElement();
 
       this.vrLog("Initializing WebRTC...");
-      // CRITICAL: Connect to SIGNALING server at computer IP (10.0.0.229)
+      // CRITICAL: Connect to SIGNALING server at computer IP (10.0.0.43)
       // but target ROBOT at robot IP (10.0.0.207)
-      const signalingServer = "10.0.0.229";
+      const signalingServer = "10.0.0.43";
       this.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
 
       // Skip microphone for now as requested by user
