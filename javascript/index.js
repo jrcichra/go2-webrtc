@@ -187,7 +187,7 @@ buildGamePadsSelect();
 
 // Load saved values when the page loads
 document.addEventListener("DOMContentLoaded", loadSavedValues);
-document.addEventListener("DOMContentLoaded", addJoysticks);
+// document.addEventListener("DOMContentLoaded", addJoysticks);
 
 document.getElementById("gamepad").addEventListener("change", () => {
   //alert("change");

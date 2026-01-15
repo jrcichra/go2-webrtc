@@ -325,6 +325,21 @@ export class Go2WebRTC {
       logMessage("Microphone disabled");
     }
   }
+
+  close() {
+    if (this.channel) {
+      this.channel.close();
+    }
+    if (this.pc) {
+      this.pc.close();
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    this.disableMicrophone();
+    console.log("Go2WebRTC connection closed");
+    logMessage("Connection closed");
+  }
 }
 
 // TODO: to be removed, for debugging
