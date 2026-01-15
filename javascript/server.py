@@ -95,12 +95,21 @@ class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 
 # Set up the server with HTTPS
-with socketserver.TCPServer(("", PORT), CORSRequestHandler) as httpd:
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+print("----------------------------------------------------------------")
+print(f"Starting HTTPS Server on {PORT}...")
+print("If you do not see this message, you are running the wrong file!")
+print("----------------------------------------------------------------")
+
+with ReusableTCPServer(("", PORT), CORSRequestHandler) as httpd:
     # Wrap the socket with SSL
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
     httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
     
-    print(f"Serving on HTTPS port {PORT}")
-    print("Using self-signed certificate - you'll need to accept security warning in browser")
+    print(f"✅ HTTPS Server is RUNNING on port {PORT}")
+    print(f"👉 Access URL: https://10.0.0.43:{PORT}")
+    print("----------------------------------------------------------------")
     httpd.serve_forever()
