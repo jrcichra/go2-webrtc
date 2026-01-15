@@ -350,19 +350,29 @@ class WebXRController {
       Math.abs(leftStickY) > 0.1 ||
       Math.abs(rightStickX) > 0.1
     ) {
-      // Map VR joysticks to robot movement (like WASD + Q/E)
-      // Left joystick: Forward/backward and strafe
-      // Right joystick: Rotation
-      const forward = -leftStickY * 0.5; // Forward/backward
-      const strafe = leftStickX * 0.3; // Left/right strafe
-      const rotation = rightStickX * 1.5; // Rotation
+      // RATE LIMITING: Only send every 100ms to match desktop behavior
+      const now = Date.now();
+      if (now - this.lastMovementTime < 100) {
+        return;
+      }
+      this.lastMovementTime = now;
+
+      // Map VR joysticks to robot movement (Matching index.js "Arcade" style)
+      // Left Stick Y (Inverted): Forward/Backward (x)
+      // Left Stick X (Inverted): Turn Left/Right (z)
+      // Right Stick X (Inverted): Strafe Left/Right (y)
+
+      // Scale to matching index.js magnitude (~2.0 max)
+      const forward = -leftStickY * 2.0; // x
+      const turn = -leftStickX * 2.0; // z (Turn) - Note: index.js uses Left Stick X for Z
+      const strafe = -rightStickX * 1.5; // y (Strafe) - Note: index.js uses Right Stick X for Y
 
       this.vrLog(
-        `Move: ${forward.toFixed(1)},${strafe.toFixed(1)},${rotation.toFixed(
+        `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(
           1
         )}`
       );
-      this.sendMovement(forward, strafe, rotation);
+      this.sendMovement(forward, strafe, turn);
     }
   }
 
