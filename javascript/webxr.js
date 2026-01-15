@@ -448,12 +448,15 @@ class WebXRController {
         this.vrLog(`Signaling: ${this.rtc.pc.signalingState}`);
       });
 
-      // Skip microphone for now as requested by user
-      // try {
-      //   await this.rtc.enableMicrophone();
-      // } catch (error) {
-      //   console.log("Microphone access denied, connecting without audio");
-      // }
+      // Enable microphone (required for robot movement)
+      try {
+        await this.rtc.enableMicrophone();
+      } catch (error) {
+        console.log(
+          "Microphone access denied, robot may not respond to movement commands"
+        );
+        this.vrLog("Mic denied - movement may not work");
+      }
 
       try {
         await this.rtc.initSDP();
