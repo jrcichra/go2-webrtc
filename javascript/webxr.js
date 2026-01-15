@@ -484,18 +484,6 @@ class WebXRController {
       monitorChannel(); // Check immediately
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
-      // Wait a bit for validation to complete, then put robot in control mode
-      setTimeout(() => {
-        console.log("Putting robot in control mode for VR");
-        // Put robot in stand up mode for movement
-        if (this.rtc.channel && this.rtc.channel.readyState === "open") {
-          this.rtc.publishApi("rt/api/sport/request", 1004, ""); // StandUp
-          this.vrLog("Sent StandUp command");
-        } else {
-          this.vrLog("Cannot send StandUp: Channel not open");
-        }
-      }, 1000);
-
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`
       );
