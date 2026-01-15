@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFa
 import { Go2WebRTC } from "./go2webrtc.js";
 
 // Version number for cache busting verification
-const WEBXR_VERSION = 14;
+const WEBXR_VERSION = 16;
 
 class WebXRController {
   constructor() {
@@ -320,6 +320,20 @@ class WebXRController {
       }
     }
 
+    // DEBUG: Log raw values for first controller occasionally
+    if (!this.axisLogCounter) this.axisLogCounter = 0;
+    this.axisLogCounter++;
+    if (
+      this.axisLogCounter % 120 === 0 &&
+      session.inputSources[0] &&
+      session.inputSources[0].gamepad
+    ) {
+      const gp = session.inputSources[0].gamepad;
+      // Log all axes to see which ones move
+      const axesStr = gp.axes.map((a) => a.toFixed(2)).join(",");
+      this.updateDebugPanel(`Axes Debug:\n[${axesStr}]`);
+    }
+
     // Log controller status periodically (every 60 frames)
     if (!this.joystickLogCounter) this.joystickLogCounter = 0;
     this.joystickLogCounter++;
@@ -492,6 +506,17 @@ class WebXRController {
     // Switch back to dark background when exiting VR
     if (!this.renderer.xr.isPresenting && this.scene.background === null) {
       this.scene.background = new THREE.Color(0x1f1f1f);
+    }
+
+    // CRITICAL: Ensure video is playing and texture updates
+    const videoElement = document.getElementById("video-frame");
+    if (videoElement) {
+      if (videoElement.paused) {
+        videoElement.play().catch((e) => {}); // Force play if paused
+      }
+    }
+    if (this.videoTexture) {
+      this.videoTexture.needsUpdate = true;
     }
 
     // Update joystick input
