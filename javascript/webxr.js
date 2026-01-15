@@ -421,10 +421,11 @@ class WebXRController {
         this.vrLog(`[RTC] ${msg}`);
       };
 
-      // CRITICAL: Create video element BEFORE WebRTC connection
-      // The go2webrtc.js validation callback checks for this element
-      // and only sends the video "on" message if it exists
+      // CRITICAL: Create video and audio elements BEFORE WebRTC connection
+      // The go2webrtc.js validation callback checks for these elements
+      // and only sends the video/audio "on" messages if they exist
       this.ensureVideoElement();
+      this.ensureAudioElement();
 
       this.vrLog("Initializing WebRTC...");
       // CRITICAL: Connect to SIGNALING server at computer IP (10.0.0.43)
@@ -543,6 +544,21 @@ class WebXRController {
       document.body.appendChild(videoElement);
     }
     return videoElement;
+  }
+
+  ensureAudioElement() {
+    // Create audio element if it doesn't exist
+    // This MUST exist before WebRTC validation happens for audio "on" message
+    let audioElement = document.getElementById("audio-frame");
+    if (!audioElement) {
+      console.log("Creating audio-frame element for VR");
+      audioElement = document.createElement("audio");
+      audioElement.id = "audio-frame";
+      audioElement.autoplay = true;
+      audioElement.style.display = "none";
+      document.body.appendChild(audioElement);
+    }
+    return audioElement;
   }
 
   render(timestamp, frame) {
