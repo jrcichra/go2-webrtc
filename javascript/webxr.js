@@ -362,10 +362,10 @@ class WebXRController {
       // Left Stick X (Inverted): Turn Left/Right (z)
       // Right Stick X (Inverted): Strafe Left/Right (y)
 
-      // Scale to matching index.js magnitude (~2.0 max)
-      const forward = -leftStickY * 2.0; // x
-      const turn = -leftStickX * 2.0; // z (Turn) - Note: index.js uses Left Stick X for Z
-      const strafe = -rightStickX * 1.5; // y (Strafe) - Note: index.js uses Right Stick X for Y
+      // Match desktop scaling (no extra scaling)
+      const forward = -leftStickY; // x
+      const turn = -leftStickX; // z (Turn)
+      const strafe = -rightStickX; // y (Strafe)
 
       this.vrLog(
         `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(
@@ -494,12 +494,15 @@ class WebXRController {
       monitorChannel(); // Check immediately
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
-      // Wait a bit for validation to complete, then manually enable video
+      // Wait a bit for validation to complete, then manually enable video and put robot in control mode
       setTimeout(() => {
         console.log("Manually enabling video and audio streams for VR");
         // Manually send video "on" message in case validation missed it
         if (this.rtc.channel && this.rtc.channel.readyState === "open") {
           this.rtc.publish("", "on", 1); // DataChannelType.VID = 1
+          // Put robot in stand up mode for movement
+          this.rtc.publishApi("rt/api/sport/request", 1004, ""); // StandUp
+          this.vrLog("Sent StandUp command");
         } else {
           this.vrLog("Cannot send VID: Channel not open");
         }
