@@ -405,6 +405,12 @@ class WebXRController {
 
       console.log(`Auto-connecting to robot at ${robotIP}`);
 
+      // Redirect Go2WebRTC logs to VR debug panel
+      globalThis.logMessage = (msg) => {
+        console.log("[Go2WebRTC]", msg);
+        this.vrLog(`[RTC] ${msg}`);
+      };
+
       // CRITICAL: Create video element BEFORE WebRTC connection
       // The go2webrtc.js validation callback checks for this element
       // and only sends the video "on" message if it exists
@@ -416,6 +422,22 @@ class WebXRController {
       const signalingServer = "10.0.0.43";
       this.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
 
+      // Add ICE state monitoring
+      this.rtc.pc.addEventListener("iceconnectionstatechange", () => {
+        this.vrLog(`ICE State: ${this.rtc.pc.iceConnectionState}`);
+        this.updateStatusPanel(
+          `STATUS\nRobot: ${robotIP}\nICE: ${this.rtc.pc.iceConnectionState}`
+        );
+      });
+
+      this.rtc.pc.addEventListener("icegatheringstatechange", () => {
+        this.vrLog(`ICE Gathering: ${this.rtc.pc.iceGatheringState}`);
+      });
+
+      this.rtc.pc.addEventListener("signalingstatechange", () => {
+        this.vrLog(`Signaling: ${this.rtc.pc.signalingState}`);
+      });
+
       // Skip microphone for now as requested by user
       // try {
       //   await this.rtc.enableMicrophone();
@@ -423,21 +445,30 @@ class WebXRController {
       //   console.log("Microphone access denied, connecting without audio");
       // }
 
-      await this.rtc.initSDP();
-      this.isConnected = true;
-      this.vrLog("WebRTC connected!");
+      try {
+        await this.rtc.initSDP();
+        this.isConnected = true;
+        this.vrLog("WebRTC connected!");
+      } catch (sdpError) {
+        this.vrLog(`SDP Error: ${sdpError.message}`);
+        console.error("SDP Init Error:", sdpError);
+        throw sdpError;
+      }
 
       // Monitor data channel state
       const monitorChannel = () => {
         if (this.rtc && this.rtc.channel) {
           const state = this.rtc.channel.readyState;
-          this.vrLog(`Data channel: ${state}`);
+          // this.vrLog(`Data channel: ${state}`); // Too spammy if logged every 2s
 
           if (state === "open") {
             this.vrLog("Channel OPEN! Ready!");
+            this.updateStatusPanel(
+              `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`
+            );
             clearInterval(this.channelMonitor);
           } else if (state === "connecting") {
-            this.vrLog("Channel still connecting...");
+            // this.vrLog("Channel still connecting...");
           } else {
             this.vrLog(`Channel ${state} (not open)`);
           }
@@ -454,7 +485,11 @@ class WebXRController {
       setTimeout(() => {
         console.log("Manually enabling video and audio streams for VR");
         // Manually send video "on" message in case validation missed it
-        this.rtc.publish("", "on", 1); // DataChannelType.VID = 1
+        if (this.rtc.channel && this.rtc.channel.readyState === "open") {
+          this.rtc.publish("", "on", 1); // DataChannelType.VID = 1
+        } else {
+          this.vrLog("Cannot send VID: Channel not open");
+        }
         // Skip audio for now
         // this.rtc.publish("", "on", 2); // DataChannelType.AUD = 2
       }, 1000);
@@ -463,7 +498,7 @@ class WebXRController {
       this.setupVideoTexture();
 
       this.updateStatusPanel(
-        `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nVersion: v${WEBXR_VERSION}`
+        `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`
       );
       this.updateDebugPanel(
         "DEBUG INFO\nLeft Stick: Move/Strafe\nRight Stick: Rotate\nConnected: Yes"
@@ -472,6 +507,7 @@ class WebXRController {
       console.log("Connected to robot in VR mode");
     } catch (error) {
       console.error("Failed to connect to robot:", error);
+      this.vrLog(`Connect Error: ${error.message}`);
       this.updateStatusPanel(`STATUS\nRobot: ${robotIP}\nConnection: Failed ✗`);
     }
   }
