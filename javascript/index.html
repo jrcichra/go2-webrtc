@@ -120,8 +120,16 @@
           <button id="connect-btn" class="button-primary">Connect</button>
           <button id="execute-btn" class="button-primary">Execute</button>
         </div>
+        <div class="input-group" style="margin-top: 15px;">
+          <label for="robot-volume">Robot Audio Volume:</label>
+          <input type="range" id="robot-volume" min="0" max="1" step="0.1" value="1" style="margin-left: 10px; width: 100px;" />
+          <span id="robot-volume-value" style="margin-left: 10px;">100%</span>
+        </div>
       </div>
-      <video id="video-frame" width="640" height="480" autoplay></video>
+      <div>
+        <video id="video-frame" width="640" height="480" autoplay></video>
+        <audio id="audio-frame" autoplay></audio>
+      </div>
     </div>
     <div
       class="input-group"

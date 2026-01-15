@@ -10,8 +10,12 @@ This branch does not work with firmwares prior to 1.1.1. If you have an older fi
 
 - **WebRTC Integration**: Utilizes WebRTC to establish a real-time communication channel between the web client and the robot.
 - **User Interface**: Includes a simple web interface for connecting to the robot, sending commands, and viewing the robot's video stream.
+- **Audio Playback**: Supports real-time audio streaming from the robot.
+- **Microphone Input**: Allows sending audio from your microphone to the robot for voice commands.
+- **Volume Control**: Adjust the volume of audio received from the robot.
 - **Command Execution**: Allows users to execute predefined commands on the robot, such as movement and action commands.
 - **Persistent Settings**: Saves connection settings (token and robot IP) in the browser's localStorage for easier reconnection.
+- **3D Environment Visualization**: Three.js-powered real-time 3D mapping of the robot's surroundings using LIDAR voxel data.
 
 ## Getting Started
 
@@ -33,9 +37,37 @@ python ./server.py
 ### Usage
 
 1. Enter your security token and robot IP address in the web interface.
-2. Click the "Connect" button to establish a connection to the robot.
+2. Click the "Connect" button to establish a connection to the robot (microphone access will be requested automatically).
 3. Use the command input to send commands to the robot.
-4. The video stream from the robot (if available) will be displayed in the web interface.
+4. The video and audio streams from the robot will be played in the web interface, and your microphone audio will be sent to the robot for playback through its speakers.
+
+### Authentication & Access Levels
+
+The Go2 robot requires JWT authentication for full functionality. Here's what you get with vs. without a valid token:
+
+| Feature                  | With JWT Token                    | Without JWT Token                     |
+| ------------------------ | --------------------------------- | ------------------------------------- |
+| **WebRTC Connection**    | ✅ Full connection established    | ⚠️ May establish basic connection     |
+| **Validation Process**   | ✅ Succeeds immediately           | ❌ Fails, requires challenge-response |
+| **Video Streaming**      | ✅ Enabled (front/rear cameras)   | ❌ Disabled                           |
+| **LIDAR Data**           | ✅ Full voxel map access          | ❌ Access denied                      |
+| **Control Commands**     | ✅ All movement & action commands | ❌ Limited/rejected                   |
+| **Multiple Connections** | ✅ Multiple clients allowed       | ❌ Single connection only             |
+| **Data Subscriptions**   | ✅ All sensor data streams        | ❌ Restricted access                  |
+| **Session Persistence**  | ✅ Stable long-term connection    | ❌ May disconnect                     |
+
+### 3D Environment Visualization
+
+For 3D visualization of the robot's LIDAR mapping data:
+
+1. Open `threejs.html` in your browser (requires the Python server running)
+2. The page will automatically attempt to connect to the robot using saved credentials
+3. Once connected, you'll see a real-time 3D voxel map of the robot's surroundings
+4. Use mouse to orbit, zoom, and pan the 3D view
+5. Different colors represent different elevations/heights
+6. The grid shows spatial reference
+
+**Note**: The robot must be publishing voxel map data for the 3D visualization to work. Not all firmware versions support this feature, and valid JWT authentication is required.
 
 ### Obtaining security token
 
@@ -58,6 +90,7 @@ The token looks like this in the request payload:
     "type": "offer"
 }
 ```
+
 ## Development
 
 This project is structured around several key JavaScript files:
@@ -66,6 +99,9 @@ This project is structured around several key JavaScript files:
 - `go2webrtc.js`: Core WebRTC functionality for connecting to and communicating with the robot. Can be used standalone as an API wrapper.
 - `utils.js`: Utility functions, including encryption helpers.
 - `constants.js`: Defines constants and command codes for robot control.
+- `threejs.js`: Three.js 3D visualization engine for rendering voxel maps.
+- `threejs.init.js`: WebRTC connection setup for 3D visualization data.
+- `assets/three.worker.js`: Web worker for processing voxel geometry data.
 - `server.py`: Python server used for CORS proxying
 
 To contribute or modify the project, refer to these files for implementing additional features or improving the existing codebase. PRs are welcome.

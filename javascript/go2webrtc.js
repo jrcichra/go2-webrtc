@@ -24,6 +24,7 @@ export class Go2WebRTC {
     this.channel.onmessage = this.messageEventHandler.bind(this);
 
     this.heartbeatTimer = null;
+    this.microphoneStream = null;
   }
 
   trackEventHandler(event) {
@@ -87,7 +88,7 @@ export class Go2WebRTC {
       token: this.token,
       id: "STA_localNetwork",
       type: "offer",
-      ip: this.robotIP
+      ip: this.robotIP,
     };
     answer["sdp"] = this.pc.localDescription.sdp;
     console.log(answer);
@@ -157,6 +158,14 @@ export class Go2WebRTC {
         document.getElementById("video-frame").srcObject =
           this.VidTrackEvent.streams[0];
       }
+
+      if (document.getElementById("audio-frame") && this.AudTrackEvent) {
+        logMessage("Playing audio");
+        logMessage("Sending audio on message");
+        this.publish("", "on", DataChannelType.AUD);
+        document.getElementById("audio-frame").srcObject =
+          this.AudTrackEvent.streams[0];
+      }
     } else {
       logMessage(`Sending validation key ${msg.data}`);
       this.publish("", encryptKey(msg.data), DataChannelType.VALIDATION); // );
@@ -220,8 +229,8 @@ export class Go2WebRTC {
     console.log("Command:", api_id);
 
     this.publish(topic, {
-      header: { identity: { id: uniqID, api_id: api_id} },
-      parameter: data
+      header: { identity: { id: uniqID, api_id: api_id } },
+      parameter: data,
     });
   }
 
@@ -254,6 +263,64 @@ export class Go2WebRTC {
       this.publish(topic, _msg, DataChannelType.REQUEST)
       // publish(rtc, topic,  {api_id: 1016, data: 1016}, DataChannelType.REQUEST)
     );
+  }
+
+  async enableMicrophone() {
+    try {
+      // Request microphone access
+      this.microphoneStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+
+      // Add the microphone track to the peer connection
+      const audioTrack = this.microphoneStream.getAudioTracks()[0];
+      if (audioTrack) {
+        // Add the track directly to the peer connection (similar to stream_radio.py)
+        this.pc.addTrack(audioTrack);
+
+        // Enter megaphone mode to enable speaker output on the robot
+        await this.enterMegaphoneMode();
+
+        logMessage("Microphone enabled and connected to robot");
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error enabling microphone:", error);
+      logMessage("Failed to enable microphone: " + error.message);
+      return false;
+    }
+  }
+
+  async enterMegaphoneMode() {
+    try {
+      await this.publishApi("rt/api/audiohub/request", 4001, ""); // ENTER_MEGAPHONE
+      logMessage("Entered megaphone mode");
+    } catch (error) {
+      logMessage("Failed to enter megaphone mode: " + error.message);
+    }
+  }
+
+  async exitMegaphoneMode() {
+    try {
+      await this.publishApi("rt/api/audiohub/request", 4002, ""); // EXIT_MEGAPHONE
+      logMessage("Exited megaphone mode");
+    } catch (error) {
+      logMessage("Failed to exit megaphone mode: " + error.message);
+    }
+  }
+
+  disableMicrophone() {
+    if (this.microphoneStream) {
+      this.microphoneStream.getTracks().forEach((track) => track.stop());
+      this.microphoneStream = null;
+
+      // Exit megaphone mode
+      this.exitMegaphoneMode();
+
+      logMessage("Microphone disabled");
+    }
   }
 }
 
