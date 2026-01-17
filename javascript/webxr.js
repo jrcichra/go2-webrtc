@@ -28,6 +28,14 @@ class WebXRController {
     this.debugLogs = []; // Store debug messages for VR panel
     this.maxDebugLogs = 10; // Keep last 10 messages
 
+    // Menu system properties
+    this.menuVisible = false;
+    this.menuPanels = [];
+    this.menuItems = [];
+    this.selectedMenuItem = -1;
+    this.menuPage = 0;
+    this.menuItemsPerPage = 6;
+
     this.init();
   }
 
@@ -1012,6 +1020,404 @@ class WebXRController {
       clearInterval(this.stateUpdateInterval);
       this.stateUpdateInterval = null;
     }
+  }
+
+  updateMenuButtons() {
+    if (!this.renderer.xr.isPresenting) return;
+
+    const session = this.renderer.xr.getSession();
+    if (!session) return;
+
+    for (const source of session.inputSources) {
+      if (source.gamepad) {
+        const gamepad = source.gamepad;
+
+        // Check for menu button (button 5 is typically B/Y button on Quest controllers)
+        const menuButtonPressed =
+          gamepad.buttons[5] && gamepad.buttons[5].pressed;
+
+        if (menuButtonPressed && !this.lastButtonStates.menu) {
+          // Menu button just pressed
+          if (this.menuVisible) {
+            this.hideMenu();
+          } else {
+            this.showMenu();
+          }
+        }
+
+        this.lastButtonStates.menu = menuButtonPressed;
+      }
+    }
+  }
+
+  updateMenuRaycasting() {
+    if (!this.menuVisible || !this.renderer.xr.isPresenting) return;
+
+    const session = this.renderer.xr.getSession();
+    if (!session) return;
+
+    // Use controller 0 for raycasting
+    const controller = this.controllers[0];
+    if (!controller) return;
+
+    // Create raycaster from controller position
+    const raycaster = new THREE.Raycaster();
+    const tempMatrix = new THREE.Matrix4();
+
+    // Set raycaster from controller
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+    // Get all interactive menu objects
+    const interactiveObjects = [];
+    if (this.categoryButtons) {
+      interactiveObjects.push(...this.categoryButtons.map((b) => b.panel));
+    }
+    if (this.commandButtons) {
+      interactiveObjects.push(...this.commandButtons.map((b) => b.panel));
+    }
+    if (this.navButtons) {
+      interactiveObjects.push(...this.navButtons.map((b) => b.panel));
+    }
+
+    // Find intersections
+    const intersects = raycaster.intersectObjects(interactiveObjects);
+
+    // Clear previous selection
+    interactiveObjects.forEach((obj) => {
+      if (obj.userData.wireframe) {
+        obj.userData.wireframe.visible = false;
+      }
+    });
+
+    // Highlight selected object
+    if (intersects.length > 0) {
+      const selectedObject = intersects[0].object;
+      if (selectedObject.userData.wireframe) {
+        selectedObject.userData.wireframe.visible = true;
+        this.selectedMenuItem = interactiveObjects.indexOf(selectedObject);
+      }
+    } else {
+      this.selectedMenuItem = -1;
+    }
+  }
+
+  handleMenuSelection() {
+    // Execute the selected menu item's action
+    if (this.selectedMenuItem >= 0) {
+      const allButtons = [
+        ...(this.categoryButtons || []),
+        ...(this.commandButtons || []),
+        ...(this.navButtons || []),
+      ];
+      if (
+        allButtons[this.selectedMenuItem] &&
+        allButtons[this.selectedMenuItem].panel.userData.onClick
+      ) {
+        allButtons[this.selectedMenuItem].panel.userData.onClick();
+      }
+    }
+  }
+
+  createCommandMenu() {
+    // Define robot commands organized by category
+    this.robotCommands = {
+      basic: [
+        { id: 1004, name: "Stand Up", desc: "Stand on all fours" },
+        { id: 1005, name: "Lie Down", desc: "Lie down flat" },
+        { id: 1009, name: "Sit", desc: "Sit position" },
+        { id: 1003, name: "Stop", desc: "Stop all movement" },
+        { id: 1001, name: "Damp", desc: "Damp mode" },
+        { id: 1002, name: "Balance", desc: "Balance stand" },
+      ],
+      tricks: [
+        { id: 1016, name: "Hello", desc: "Wave hello" },
+        { id: 1017, name: "Stretch", desc: "Stretch body" },
+        { id: 1030, name: "Front Flip", desc: "Do a flip" },
+        { id: 1031, name: "Jump", desc: "Jump forward" },
+        { id: 1032, name: "Pounce", desc: "Pounce attack" },
+        { id: 1029, name: "Scrape", desc: "Scrape ground" },
+        { id: 1033, name: "Wiggle", desc: "Wiggle hips" },
+        { id: 1036, name: "Heart", desc: "Finger heart" },
+        { id: 1021, name: "Wallow", desc: "Roll around" },
+        { id: 1022, name: "Dance 1", desc: "Dance routine 1" },
+        { id: 1023, name: "Dance 2", desc: "Dance routine 2" },
+      ],
+      movement: [
+        { id: 1011, name: "Switch Gait", desc: "Change walk style" },
+        { id: 1013, name: "Body Height", desc: "Adjust height" },
+        { id: 1014, name: "Foot Height", desc: "Adjust foot raise" },
+        { id: 1015, name: "Speed", desc: "Change speed level" },
+        { id: 1035, name: "Eco Mode", desc: "Economic gait" },
+      ],
+    };
+
+    // Create menu background panel
+    this.createMenuBackground();
+
+    // Create menu category buttons
+    this.createMenuCategories();
+
+    // Initially hide menu
+    this.hideMenu();
+  }
+
+  createMenuBackground() {
+    // Large semi-transparent background panel for menu
+    const bgGeometry = new THREE.PlaneGeometry(6, 4);
+    const bgMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.8,
+    });
+    this.menuBackground = new THREE.Mesh(bgGeometry, bgMaterial);
+    this.menuBackground.position.set(0, 1.5, -2);
+    this.scene.add(this.menuBackground);
+
+    // Menu title
+    this.menuTitlePanel = this.createTextPanel(
+      "ROBOT COMMAND MENU\nPress B/Y to toggle menu",
+      0,
+      3.2,
+      -1.8,
+    );
+    this.scene.add(this.menuTitlePanel.panel);
+    this.menuPanels.push(this.menuTitlePanel.panel);
+  }
+
+  createMenuCategories() {
+    const categories = [
+      { name: "Basic", key: "basic", x: -2, color: 0x4caf50 },
+      { name: "Tricks", key: "tricks", x: 0, color: 0xff9800 },
+      { name: "Movement", key: "movement", x: 2, color: 0x2196f3 },
+    ];
+
+    this.categoryButtons = [];
+
+    categories.forEach((cat, index) => {
+      const button = this.createMenuButton(
+        cat.name,
+        cat.x,
+        2.2,
+        -1.9,
+        cat.color,
+        () => this.showCategory(cat.key),
+      );
+      this.categoryButtons.push(button);
+      this.menuPanels.push(button.panel);
+    });
+  }
+
+  createMenuButton(text, x, y, z, color, onClick) {
+    // Button background
+    const buttonGeometry = new THREE.PlaneGeometry(1.5, 0.8);
+    const buttonMaterial = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+    button.position.set(x, y, z);
+    button.userData = { onClick, type: "button" };
+
+    // Button text
+    const textPanel = this.createTextPanel(text, x, y, z + 0.01);
+
+    // Add wireframe for selection highlight
+    const wireframeGeometry = new THREE.EdgesGeometry(buttonGeometry);
+    const wireframeMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      linewidth: 3,
+    });
+    const wireframe = new THREE.LineSegments(
+      wireframeGeometry,
+      wireframeMaterial,
+    );
+    button.add(wireframe);
+    wireframe.visible = false;
+    button.userData.wireframe = wireframe;
+
+    this.scene.add(button);
+
+    return { panel: button, textMesh: textPanel.textMesh, wireframe };
+  }
+
+  showCategory(categoryKey) {
+    // Hide existing command buttons
+    this.hideCommandButtons();
+
+    const commands = this.robotCommands[categoryKey];
+    if (!commands) return;
+
+    this.currentCategory = categoryKey;
+    this.commandButtons = [];
+
+    // Calculate pagination
+    const startIndex = this.menuPage * this.menuItemsPerPage;
+    const endIndex = Math.min(
+      startIndex + this.menuItemsPerPage,
+      commands.length,
+    );
+    const visibleCommands = commands.slice(startIndex, endIndex);
+
+    visibleCommands.forEach((cmd, index) => {
+      const x = (index % 2) * 2.5 - 1.25; // Two columns
+      const y = 1.2 - Math.floor(index / 2) * 0.9;
+
+      const button = this.createMenuButton(
+        `${cmd.name}\n${cmd.desc}`,
+        x,
+        y,
+        -1.9,
+        0x666666,
+        () => this.sendCommand(cmd.id, cmd.name),
+      );
+      this.commandButtons.push(button);
+      this.menuPanels.push(button.panel);
+    });
+
+    // Add navigation buttons if needed
+    if (commands.length > this.menuItemsPerPage) {
+      this.addNavigationButtons(commands.length);
+    }
+
+    this.updateMenuTitle(
+      `${categoryKey.toUpperCase()} COMMANDS\nPage ${this.menuPage + 1}`,
+    );
+  }
+
+  hideCommandButtons() {
+    if (this.commandButtons) {
+      this.commandButtons.forEach((button) => {
+        this.scene.remove(button.panel);
+        this.menuPanels = this.menuPanels.filter((p) => p !== button.panel);
+      });
+      this.commandButtons = [];
+    }
+
+    // Hide navigation buttons
+    if (this.navButtons) {
+      this.navButtons.forEach((button) => {
+        this.scene.remove(button.panel);
+        this.menuPanels = this.menuPanels.filter((p) => p !== button.panel);
+      });
+      this.navButtons = [];
+    }
+  }
+
+  addNavigationButtons(totalCommands) {
+    this.navButtons = [];
+    const totalPages = Math.ceil(totalCommands / this.menuItemsPerPage);
+
+    if (this.menuPage > 0) {
+      const prevButton = this.createMenuButton(
+        "Previous\nPage",
+        -2.5,
+        -0.5,
+        -1.9,
+        0xff5722,
+        () => {
+          this.menuPage--;
+          this.showCategory(this.currentCategory);
+        },
+      );
+      this.navButtons.push(prevButton);
+      this.menuPanels.push(prevButton.panel);
+    }
+
+    if (this.menuPage < totalPages - 1) {
+      const nextButton = this.createMenuButton(
+        "Next\nPage",
+        2.5,
+        -0.5,
+        -1.9,
+        0xff5722,
+        () => {
+          this.menuPage++;
+          this.showCategory(this.currentCategory);
+        },
+      );
+      this.navButtons.push(nextButton);
+      this.menuPanels.push(nextButton.panel);
+    }
+  }
+
+  updateMenuTitle(text) {
+    if (this.menuTitlePanel && this.menuTitlePanel.textMesh) {
+      this.menuTitlePanel.textMesh.updateText(text);
+    }
+  }
+
+  showMenu() {
+    this.menuVisible = true;
+    this.menuBackground.visible = true;
+    this.categoryButtons.forEach((button) => {
+      button.panel.visible = true;
+    });
+    this.menuPanels.forEach((panel) => {
+      panel.visible = true;
+    });
+    this.updateMenuTitle("ROBOT COMMAND MENU\nPress B/Y to toggle menu");
+    this.vrLog("Menu opened");
+  }
+
+  hideMenu() {
+    this.menuVisible = false;
+    this.menuBackground.visible = false;
+    this.categoryButtons.forEach((button) => {
+      button.panel.visible = false;
+    });
+    this.hideCommandButtons();
+    this.menuPanels.forEach((panel) => {
+      panel.visible = false;
+    });
+    this.menuPage = 0;
+    this.currentCategory = null;
+    this.selectedMenuItem = -1;
+    this.vrLog("Menu closed");
+  }
+
+  sendCommand(commandId, commandName) {
+    if (
+      !this.rtc ||
+      !this.rtc.channel ||
+      this.rtc.channel.readyState !== "open"
+    ) {
+      this.vrLog(`Cannot send ${commandName}: No connection`);
+      return;
+    }
+
+    this.vrLog(`Sending command: ${commandName} (${commandId})`);
+
+    // Send the command to the robot
+    this.rtc.publishApi("rt/api/sport/request", commandId, "");
+
+    // Provide feedback
+    this.updateMenuTitle(
+      `SENT: ${commandName.toUpperCase()}\nCommand executed!`,
+    );
+
+    // Reset title after 2 seconds
+    setTimeout(() => {
+      if (this.currentCategory) {
+        this.updateMenuTitle(
+          `${this.currentCategory.toUpperCase()} COMMANDS\nPage ${this.menuPage + 1}`,
+        );
+      } else {
+        this.updateMenuTitle("ROBOT COMMAND MENU\nPress B/Y to hide menu");
+      }
+    }, 2000);
+  }
+
+  // Cleanup menu when disconnecting
+  cleanupMenu() {
+    this.hideMenu();
+    // Remove all menu panels from scene
+    this.menuPanels.forEach((panel) => {
+      this.scene.remove(panel);
+    });
+    this.menuPanels = [];
   }
 }
 
