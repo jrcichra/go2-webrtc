@@ -17,9 +17,14 @@ class WebXRController {
     this.uiPanels = [];
     this.debugTextMesh = null;
     this.statusTextMesh = null;
+    this.hudTextMesh = null;
+    this.batteryTextMesh = null;
+    this.sensorsTextMesh = null;
     this.rtc = null;
     this.isConnected = false;
     this.lastMovementTime = 0;
+    this.robotState = {}; // Store current robot state data
+    this.lastStateUpdate = 0;
     this.debugLogs = []; // Store debug messages for VR panel
     this.maxDebugLogs = 10; // Keep last 10 messages
 
@@ -276,6 +281,41 @@ class WebXRController {
     );
     this.statusTextMesh = statusPanel.textMesh;
     this.uiPanels.push(statusPanel.panel);
+
+    // Create HUD panels for robot information
+    this.createHUDPanels();
+  }
+
+  createHUDPanels() {
+    // Movement/Control HUD - positioned above video screen
+    const hudPanel = this.createTextPanel(
+      "MOVEMENT HUD\nVelocity: --\nMode: Manual\nGait: Walk",
+      -4,
+      3.5,
+      -4,
+    );
+    this.hudTextMesh = hudPanel.textMesh;
+    this.uiPanels.push(hudPanel.panel);
+
+    // Battery/Sensors HUD - positioned to the left of video screen
+    const batteryPanel = this.createTextPanel(
+      "BATTERY & SENSORS\nBattery: --%\nTemp: --°C\nLidar: --\nCameras: --",
+      -5,
+      2,
+      -3,
+    );
+    this.batteryTextMesh = batteryPanel.textMesh;
+    this.uiPanels.push(batteryPanel.panel);
+
+    // Robot State HUD - positioned to the right of video screen
+    const sensorsPanel = this.createTextPanel(
+      "ROBOT STATE\nRoll: --°\nPitch: --°\nYaw: --°\nObstacles: --m",
+      5,
+      2,
+      -3,
+    );
+    this.sensorsTextMesh = sensorsPanel.textMesh;
+    this.uiPanels.push(sensorsPanel.panel);
   }
 
   createTextPanel(text, x, y, z) {
@@ -740,6 +780,9 @@ class WebXRController {
         this.checkVideoStatus();
       }, 10000); // Less frequent to reduce spam
 
+      // Start requesting robot state for HUD
+      this.startStateUpdates();
+
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
       );
@@ -841,6 +884,133 @@ class WebXRController {
   updateStatusPanel(text) {
     if (this.statusTextMesh) {
       this.statusTextMesh.updateText(text);
+    }
+  }
+
+  // Start periodic robot state updates for HUD
+  startStateUpdates() {
+    // Request state every 2 seconds
+    this.stateUpdateInterval = setInterval(() => {
+      this.requestRobotState();
+    }, 2000);
+
+    // Also listen for state messages from the robot
+    this.setupStateMessageHandler();
+  }
+
+  // Request robot state information
+  requestRobotState() {
+    if (
+      !this.rtc ||
+      !this.rtc.channel ||
+      this.rtc.channel.readyState !== "open"
+    ) {
+      return;
+    }
+
+    // Request GetState (command 1034)
+    this.rtc.publishApi("rt/api/sport/request", 1034, "");
+  }
+
+  // Setup handler for incoming state messages
+  setupStateMessageHandler() {
+    if (!this.rtc) return;
+
+    // Override the message callback to intercept state messages
+    const originalCallback = this.rtc.messageCallback;
+    this.rtc.messageCallback = (data) => {
+      // Handle state messages for HUD
+      if (data && data.topic) {
+        if (
+          data.topic.includes("sportmodestate") ||
+          data.topic.includes("servicestate")
+        ) {
+          this.handleStateMessage(data);
+        }
+      }
+
+      // Call original callback if it exists
+      if (originalCallback) {
+        originalCallback(data);
+      }
+    };
+  }
+
+  // Handle incoming state messages and update HUD
+  handleStateMessage(data) {
+    try {
+      console.log("State message received:", data);
+
+      // Update robot state data
+      if (data.data) {
+        this.robotState = { ...this.robotState, ...data.data };
+        this.lastStateUpdate = Date.now();
+
+        // Update HUD panels with new data
+        this.updateHUDPanels();
+      }
+    } catch (error) {
+      console.error("Error handling state message:", error);
+    }
+  }
+
+  // Update all HUD panels with current robot state
+  updateHUDPanels() {
+    this.updateMovementHUD();
+    this.updateBatterySensorsHUD();
+    this.updateRobotStateHUD();
+  }
+
+  // Update movement/control HUD
+  updateMovementHUD() {
+    const velocity = this.robotState.velocity || "--";
+    const mode = this.robotState.mode || "Manual";
+    const gait = this.robotState.gait || "Walk";
+
+    const hudText = `MOVEMENT HUD\nVelocity: ${velocity}\nMode: ${mode}\nGait: ${gait}`;
+
+    if (this.hudTextMesh) {
+      this.hudTextMesh.updateText(hudText);
+    }
+  }
+
+  // Update battery and sensors HUD
+  updateBatterySensorsHUD() {
+    const battery = this.robotState.battery || "--";
+    const temperature = this.robotState.temperature || "--";
+    const lidar = this.robotState.lidar ? "ON" : "--";
+    const cameras = this.robotState.cameras ? "ON" : "--";
+
+    const batteryText = `BATTERY & SENSORS\nBattery: ${battery}%\nTemp: ${temperature}°C\nLidar: ${lidar}\nCameras: ${cameras}`;
+
+    if (this.batteryTextMesh) {
+      this.batteryTextMesh.updateText(batteryText);
+    }
+  }
+
+  // Update robot state/orientation HUD
+  updateRobotStateHUD() {
+    const roll = this.robotState.roll ? this.robotState.roll.toFixed(1) : "--";
+    const pitch = this.robotState.pitch
+      ? this.robotState.pitch.toFixed(1)
+      : "--";
+    const yaw = this.robotState.yaw ? this.robotState.yaw.toFixed(1) : "--";
+    const obstacles = this.robotState.obstacleDistance
+      ? this.robotState.obstacleDistance.toFixed(1)
+      : "--";
+
+    const sensorsText = `ROBOT STATE\nRoll: ${roll}°\nPitch: ${pitch}°\nYaw: ${yaw}°\nObstacles: ${obstacles}m`;
+
+    if (this.sensorsTextMesh) {
+      this.sensorsTextMesh.updateText(sensorsText);
+    }
+  }
+
+  // Stop state updates when disconnecting
+  stopStateUpdates() {
+    if (this.stateUpdateInterval) {
+      clearInterval(this.stateUpdateInterval);
+      this.stateUpdateInterval = null;
     }
   }
 }
