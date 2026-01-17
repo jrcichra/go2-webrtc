@@ -382,25 +382,23 @@ class WebXRController {
       console.log(`Controller ${controllerIndex} trigger pressed`);
 
       // If video is pending, try to play it
-      if (
-        this.pendingVideoStream &&
-        this.videoElement &&
-        this.videoElement.srcObject
-      ) {
-        this.vrLog("Trigger: trying video play...");
-        this.videoElement
-          .play()
-          .then(() => {
-            this.vrLog("Video STARTED!");
-            this.pendingVideoStream = false;
-          })
-          .catch((err) => {
-            this.vrLog(`Play failed: ${err.name}`);
-          });
-      } else if (!this.videoElement.srcObject) {
-        this.vrLog("No video stream yet");
-      } else if (!this.pendingVideoStream && this.videoElement.srcObject) {
-        this.vrLog("Video already playing");
+      if (this.videoElement && this.videoElement.srcObject) {
+        if (this.videoElement.paused) {
+          this.vrLog("Starting video playback...");
+          this.videoElement
+            .play()
+            .then(() => {
+              this.vrLog("Video playing!");
+              this.pendingVideoStream = false;
+            })
+            .catch((err) => {
+              this.vrLog(`Play error: ${err.name}`);
+            });
+        } else {
+          this.vrLog("Video already playing");
+        }
+      } else {
+        this.vrLog("Waiting for video stream...");
       }
     });
 
@@ -582,31 +580,23 @@ class WebXRController {
 
         if (event.track.kind === "video") {
           this.vrLog("Video track received!");
+          console.log("Video track details:", event.track);
+          console.log("Video streams:", event.streams);
 
-          // Assign the video stream directly
-          if (event.streams && event.streams[0]) {
-            this.vrLog("Assigning video stream to element...");
-            this.videoElement.srcObject = event.streams[0];
-
-            // Store the stream for later play attempt
-            this.pendingVideoStream = true;
-
-            // Try to play it manually
-            this.videoElement
-              .play()
-              .then(() => {
-                this.vrLog("Video play() succeeded!");
-                this.pendingVideoStream = false;
-              })
-              .catch((err) => {
-                this.vrLog(`Video play() failed: ${err.name}`);
-                if (err.name === "NotAllowedError") {
-                  this.vrLog("Press ANY controller button to start video!");
-                }
-              });
-          } else {
-            this.vrLog("No streams in track event!");
-          }
+          // The go2webrtc.js should handle assigning srcObject
+          // But we'll monitor to see if it happens
+          setTimeout(() => {
+            if (this.videoElement.srcObject) {
+              this.vrLog("Video srcObject assigned by go2webrtc!");
+              this.pendingVideoStream = true;
+            } else {
+              this.vrLog("No srcObject - assigning manually...");
+              if (event.streams && event.streams[0]) {
+                this.videoElement.srcObject = event.streams[0];
+                this.pendingVideoStream = true;
+              }
+            }
+          }, 100);
         }
       });
 
@@ -617,13 +607,16 @@ class WebXRController {
         console.log("ICE connection state changed:", state);
 
         if (state === "disconnected") {
-          this.vrLog("ICE DISCONNECTED! Checking...");
+          this.vrLog("ICE DISCONNECTED! Will retry...");
+          // Don't panic - disconnected can recover
         } else if (state === "failed") {
           this.vrLog("ICE FAILED! Connection lost!");
         } else if (state === "connected") {
           this.vrLog("ICE CONNECTED!");
         } else if (state === "completed") {
           this.vrLog("ICE COMPLETED!");
+        } else if (state === "checking") {
+          this.vrLog("ICE Checking...");
         }
 
         this.updateStatusPanel(`STATUS\nRobot: ${robotIP}\nICE: ${state}`);
@@ -673,15 +666,8 @@ class WebXRController {
               this.vrLog("Channel OPEN! Ready!");
               this.channelOpenLogged = true;
 
-              // Wait a bit before requesting video to let connection stabilize
-              setTimeout(() => {
-                this.vrLog("Requesting video stream...");
-                try {
-                  this.rtc.publish("", "on", 2); // DataChannelType.VID = 2
-                } catch (err) {
-                  this.vrLog(`Video request error: ${err.message}`);
-                }
-              }, 2000);
+              // DON'T manually request video - let go2webrtc handle it via validation
+              // The rtcValidation function in go2webrtc.js will send the "on" message
             }
 
             this.updateStatusPanel(
@@ -690,8 +676,10 @@ class WebXRController {
             clearInterval(this.channelMonitor);
           } else if (state === "connecting") {
             // this.vrLog("Channel still connecting...");
+          } else if (state === "closed") {
+            this.vrLog("Channel CLOSED!");
           } else {
-            this.vrLog(`Channel ${state} (not open)`);
+            this.vrLog(`Channel ${state}`);
           }
         } else {
           this.vrLog("No channel object yet");
