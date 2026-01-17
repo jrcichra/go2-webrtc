@@ -27,7 +27,6 @@ class WebXRController {
 
     // Menu system properties
     this.menuVisible = false;
-    this.menuPanels = [];
     this.selectedMenuItem = -1;
     this.currentCategory = null;
     this.lastButtonStates = {
@@ -1065,6 +1064,46 @@ class WebXRController {
     }
   }
 
+  showMenu() {
+    this.menuVisible = true;
+
+    if (this.menuGroup) {
+      this.menuGroup.visible = true;
+    }
+
+    // Show laser pointer
+    if (this.laserPointer) {
+      this.laserPointer.visible = true;
+    }
+
+    // Reset to category view
+    this.hideCommandButtons();
+    this.currentCategory = null;
+    this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
+
+    this.vrLog("Menu opened");
+  }
+
+  hideMenu() {
+    this.menuVisible = false;
+
+    if (this.menuGroup) {
+      this.menuGroup.visible = false;
+    }
+
+    // Hide laser pointer
+    if (this.laserPointer) {
+      this.laserPointer.visible = false;
+    }
+
+    this.hideCommandButtons();
+    this.currentCategory = null;
+    this.selectedMenuItem = -1;
+    this.selectedButton = null;
+
+    this.vrLog("Menu closed");
+  }
+
   updateMenuRaycasting() {
     if (!this.menuVisible || !this.renderer.xr.isPresenting) return;
 
@@ -1155,6 +1194,8 @@ class WebXRController {
         { id: 1005, name: "Lie Down", desc: "Lie down flat" },
         { id: 1009, name: "Sit", desc: "Sit position" },
         { id: 1003, name: "Stop", desc: "Stop all movement" },
+        { id: 1001, name: "Damp Mode", desc: "Soft/relaxed" },
+        { id: 1002, name: "Balance", desc: "Balance stand" },
       ],
       tricks: [
         { id: 1016, name: "Hello", desc: "Wave hello" },
@@ -1164,6 +1205,12 @@ class WebXRController {
         { id: 1032, name: "Pounce", desc: "Pounce attack" },
         { id: 1022, name: "Dance 1", desc: "Dance routine 1" },
         { id: 1023, name: "Dance 2", desc: "Dance routine 2" },
+        { id: 1029, name: "Scrape", desc: "Scrape ground" },
+      ],
+      movement: [
+        { id: 1011, name: "Switch Gait", desc: "Change walk style" },
+        { id: 1015, name: "Speed Level", desc: "Adjust speed" },
+        { id: 1035, name: "Eco Mode", desc: "Energy saving" },
       ],
     };
 
@@ -1179,6 +1226,10 @@ class WebXRController {
   }
 
   createMenuBackground() {
+    // Create a group to hold all menu elements
+    this.menuGroup = new THREE.Group();
+    this.menuGroup.position.set(0, 0, -2.5); // Position in front of camera
+
     // Large semi-transparent background panel for menu
     const bgGeometry = new THREE.PlaneGeometry(5, 3.5);
     const bgMaterial = new THREE.MeshBasicMaterial({
@@ -1187,7 +1238,7 @@ class WebXRController {
       opacity: 0.85,
     });
     this.menuBackground = new THREE.Mesh(bgGeometry, bgMaterial);
-    this.menuBackground.position.set(0, 1.8, -2.5);
+    this.menuBackground.position.set(0, 0, 0);
 
     // Add border
     const borderGeometry = new THREE.EdgesGeometry(bgGeometry);
@@ -1198,7 +1249,7 @@ class WebXRController {
     const border = new THREE.LineSegments(borderGeometry, borderMaterial);
     this.menuBackground.add(border);
 
-    this.scene.add(this.menuBackground);
+    this.menuGroup.add(this.menuBackground);
 
     // Menu title
     const titleCanvas = document.createElement("canvas");
@@ -1214,8 +1265,8 @@ class WebXRController {
     });
 
     this.menuTitlePanel = new THREE.Mesh(titleGeometry, titleMaterial);
-    this.menuTitlePanel.position.set(0, 3.2, -2.4);
-    this.scene.add(this.menuTitlePanel);
+    this.menuTitlePanel.position.set(0, 1.5, 0); // Relative to menuGroup
+    this.menuGroup.add(this.menuTitlePanel);
 
     this.menuTitleTextMesh = {
       canvas: titleCanvas,
@@ -1228,7 +1279,13 @@ class WebXRController {
     };
 
     this.menuTitleTextMesh.updateText("ROBOT COMMANDS");
-    this.menuPanels.push(this.menuBackground, this.menuTitlePanel);
+
+    // Add menu group to camera so it follows head movement
+    this.camera.add(this.menuGroup);
+    this.scene.add(this.camera); // Make sure camera is in scene
+
+    // Start hidden
+    this.menuGroup.visible = false;
   }
 
   renderMenuText(context, canvas, text) {
@@ -1242,9 +1299,9 @@ class WebXRController {
 
   createMenuCategories() {
     const categories = [
-      { name: "Basic", key: "basic", x: -2, color: 0x4caf50 },
+      { name: "Basic", key: "basic", x: -1.5, color: 0x4caf50 },
       { name: "Tricks", key: "tricks", x: 0, color: 0xff9800 },
-      { name: "Movement", key: "movement", x: 2, color: 0x2196f3 },
+      { name: "Movement", key: "movement", x: 1.5, color: 0x2196f3 },
     ];
 
     this.categoryButtons = [];
@@ -1253,13 +1310,13 @@ class WebXRController {
       const button = this.createMenuButton(
         cat.name,
         cat.x,
-        2.2,
-        -1.9,
+        0.5, // Relative to menuGroup
+        0.01, // Just in front of background
         cat.color,
         () => this.showCategory(cat.key),
       );
       this.categoryButtons.push(button);
-      this.menuPanels.push(button.panel);
+      this.menuGroup.add(button.panel); // Add to menuGroup instead of scene
     });
   }
 
@@ -1294,7 +1351,7 @@ class WebXRController {
     button.add(wireframe);
     button.userData.wireframe = wireframe;
 
-    this.scene.add(button);
+    // DON'T add to scene here - caller will add to menuGroup
 
     const textMesh = {
       canvas,
@@ -1342,19 +1399,35 @@ class WebXRController {
       const col = index % 2;
       const row = Math.floor(index / 2);
       const x = col * 2.2 - 1.1;
-      const y = 2.2 - row * 0.9;
+      const y = 0.5 - row * 0.9;
 
       const button = this.createMenuButton(
         `${cmd.name}\n${cmd.desc}`,
         x,
         y,
-        -2.4,
+        0.01,
         0x555555,
         () => this.sendCommand(cmd.id, cmd.name),
       );
       this.commandButtons.push(button);
-      this.menuPanels.push(button.panel);
+      this.menuGroup.add(button.panel);
     });
+
+    // Add a "Back" button
+    const backButton = this.createMenuButton(
+      "← BACK",
+      0,
+      -1.2,
+      0.01,
+      0xff5722,
+      () => {
+        this.hideCommandButtons();
+        this.currentCategory = null;
+        this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
+      },
+    );
+    this.commandButtons.push(backButton);
+    this.menuGroup.add(backButton.panel);
 
     this.menuTitleTextMesh.updateText(`${categoryKey.toUpperCase()} COMMANDS`);
   }
@@ -1362,19 +1435,9 @@ class WebXRController {
   hideCommandButtons() {
     if (this.commandButtons) {
       this.commandButtons.forEach((button) => {
-        this.scene.remove(button.panel);
-        this.menuPanels = this.menuPanels.filter((p) => p !== button.panel);
+        this.menuGroup.remove(button.panel); // Remove from menuGroup
       });
       this.commandButtons = [];
-    }
-
-    // Hide navigation buttons
-    if (this.navButtons) {
-      this.navButtons.forEach((button) => {
-        this.scene.remove(button.panel);
-        this.menuPanels = this.menuPanels.filter((p) => p !== button.panel);
-      });
-      this.navButtons = [];
     }
   }
 
@@ -1395,7 +1458,6 @@ class WebXRController {
         },
       );
       this.navButtons.push(prevButton);
-      this.menuPanels.push(prevButton.panel);
     }
 
     if (this.menuPage < totalPages - 1) {
@@ -1411,61 +1473,13 @@ class WebXRController {
         },
       );
       this.navButtons.push(nextButton);
-      this.menuPanels.push(nextButton.panel);
     }
   }
 
   updateMenuTitle(text) {
-    if (this.menuTitlePanel && this.menuTitlePanel.textMesh) {
-      this.menuTitlePanel.textMesh.updateText(text);
+    if (this.menuTitleTextMesh) {
+      this.menuTitleTextMesh.updateText(text);
     }
-  }
-
-  onControllerConnected(event, index) {
-    console.log(`Controller ${index} connected:`, event.data);
-
-    // Get controller target and grip
-    const controller = this.controllers[index];
-    const controllerGrip = this.renderer.xr.getControllerGrip(index);
-
-    // Load dynamic controller models that show button states
-    const controllerModelFactory = new XRControllerModelFactory();
-    const controllerModel =
-      controllerModelFactory.createControllerModel(controllerGrip);
-    controllerGrip.add(controllerModel);
-
-    // Add grip to scene
-    this.scene.add(controllerGrip);
-
-    // Add laser pointer to controller (only for right hand)
-    if (index === 1) {
-      // Right controller
-      this.laserPointer = this.createLaserPointer(controller);
-    }
-
-    // Setup joystick input handling
-    this.setupJoystickInput(index);
-  }
-
-  hideMenu() {
-    this.menuVisible = false;
-    this.menuBackground.visible = false;
-    this.categoryButtons.forEach((button) => {
-      button.panel.visible = false;
-    });
-    this.hideCommandButtons();
-    this.menuPanels.forEach((panel) => {
-      panel.visible = false;
-    });
-
-    // Hide laser pointer
-    if (this.laserPointer) {
-      this.laserPointer.visible = false;
-    }
-
-    this.currentCategory = null;
-    this.selectedMenuItem = -1;
-    this.vrLog("Menu closed");
   }
 
   sendCommand(commandId, commandName) {
@@ -1484,30 +1498,18 @@ class WebXRController {
     this.rtc.publishApi("rt/api/sport/request", commandId, "");
 
     // Provide feedback
-    this.updateMenuTitle(
-      `SENT: ${commandName.toUpperCase()}\nCommand executed!`,
-    );
+    this.menuTitleTextMesh.updateText(`SENT: ${commandName.toUpperCase()}`);
 
     // Reset title after 2 seconds
     setTimeout(() => {
       if (this.currentCategory) {
-        this.updateMenuTitle(
-          `${this.currentCategory.toUpperCase()} COMMANDS\nPage ${this.menuPage + 1}`,
+        this.menuTitleTextMesh.updateText(
+          `${this.currentCategory.toUpperCase()} COMMANDS`,
         );
       } else {
-        this.updateMenuTitle("ROBOT COMMAND MENU\nPress B/Y to hide menu");
+        this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
       }
     }, 2000);
-  }
-
-  // Cleanup menu when disconnecting
-  cleanupMenu() {
-    this.hideMenu();
-    // Remove all menu panels from scene
-    this.menuPanels.forEach((panel) => {
-      this.scene.remove(panel);
-    });
-    this.menuPanels = [];
   }
 }
 
