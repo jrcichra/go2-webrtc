@@ -398,6 +398,12 @@ class WebXRController {
     // Add grip to scene
     this.scene.add(controllerGrip);
 
+    // Add laser pointer to controller (only for right hand)
+    if (index === 1) {
+      // Right controller
+      this.laserPointer = this.createLaserPointer(controller);
+    }
+
     // Setup joystick input handling
     this.setupJoystickInput(index);
   }
@@ -776,6 +782,26 @@ class WebXRController {
     }
   }
 
+  createLaserPointer(controller) {
+    // Create laser line geometry
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array([0, 0, 0, 0, 0, -5]); // 5 meter ray
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      linewidth: 2,
+      opacity: 0.8,
+      transparent: true,
+    });
+
+    const laser = new THREE.Line(geometry, material);
+    laser.visible = false; // Start hidden
+    controller.add(laser);
+
+    return laser;
+  }
+
   render(timestamp, frame) {
     if (!frame) return;
 
@@ -1042,11 +1068,8 @@ class WebXRController {
   updateMenuRaycasting() {
     if (!this.menuVisible || !this.renderer.xr.isPresenting) return;
 
-    const session = this.renderer.xr.getSession();
-    if (!session) return;
-
-    // Use controller 0 for raycasting
-    const controller = this.controllers[0];
+    // Use controller 1 (right hand) for raycasting
+    const controller = this.controllers[1];
     if (!controller) return;
 
     // Create raycaster from controller position
@@ -1060,52 +1083,67 @@ class WebXRController {
 
     // Get all interactive menu objects
     const interactiveObjects = [];
+
     if (this.categoryButtons) {
-      interactiveObjects.push(...this.categoryButtons.map((b) => b.panel));
+      this.categoryButtons.forEach((b) => {
+        if (b.panel.visible) interactiveObjects.push(b.panel);
+      });
+    }
+
+    if (this.commandButtons) {
+      this.commandButtons.forEach((b) => {
+        if (b.panel.visible) interactiveObjects.push(b.panel);
+      });
+    }
+
+    // Clear previous selection - hide all wireframes
+    if (this.categoryButtons) {
+      this.categoryButtons.forEach((b) => {
+        if (b.wireframe) b.wireframe.visible = false;
+      });
     }
     if (this.commandButtons) {
-      interactiveObjects.push(...this.commandButtons.map((b) => b.panel));
-    }
-    if (this.navButtons) {
-      interactiveObjects.push(...this.navButtons.map((b) => b.panel));
+      this.commandButtons.forEach((b) => {
+        if (b.wireframe) b.wireframe.visible = false;
+      });
     }
 
     // Find intersections
     const intersects = raycaster.intersectObjects(interactiveObjects);
 
-    // Clear previous selection
-    interactiveObjects.forEach((obj) => {
-      if (obj.userData.wireframe) {
-        obj.userData.wireframe.visible = false;
-      }
-    });
-
     // Highlight selected object
     if (intersects.length > 0) {
       const selectedObject = intersects[0].object;
-      if (selectedObject.userData.wireframe) {
-        selectedObject.userData.wireframe.visible = true;
-        this.selectedMenuItem = interactiveObjects.indexOf(selectedObject);
+
+      // Find the button that owns this panel
+      let selectedButton = null;
+
+      if (this.categoryButtons) {
+        selectedButton = this.categoryButtons.find(
+          (b) => b.panel === selectedObject,
+        );
+      }
+
+      if (!selectedButton && this.commandButtons) {
+        selectedButton = this.commandButtons.find(
+          (b) => b.panel === selectedObject,
+        );
+      }
+
+      if (selectedButton && selectedButton.wireframe) {
+        selectedButton.wireframe.visible = true;
+        this.selectedButton = selectedButton;
       }
     } else {
-      this.selectedMenuItem = -1;
+      this.selectedButton = null;
     }
   }
 
   handleMenuSelection() {
-    // Execute the selected menu item's action
-    if (this.selectedMenuItem >= 0) {
-      const allButtons = [
-        ...(this.categoryButtons || []),
-        ...(this.commandButtons || []),
-        ...(this.navButtons || []),
-      ];
-      if (
-        allButtons[this.selectedMenuItem] &&
-        allButtons[this.selectedMenuItem].panel.userData.onClick
-      ) {
-        allButtons[this.selectedMenuItem].panel.userData.onClick();
-      }
+    if (!this.selectedButton) return;
+
+    if (this.selectedButton.panel.userData.onClick) {
+      this.selectedButton.panel.userData.onClick();
     }
   }
 
@@ -1383,17 +1421,30 @@ class WebXRController {
     }
   }
 
-  showMenu() {
-    this.menuVisible = true;
-    this.menuBackground.visible = true;
-    this.categoryButtons.forEach((button) => {
-      button.panel.visible = true;
-    });
-    this.menuPanels.forEach((panel) => {
-      panel.visible = true;
-    });
-    this.updateMenuTitle("ROBOT COMMAND MENU\nPress B/Y to toggle menu");
-    this.vrLog("Menu opened");
+  onControllerConnected(event, index) {
+    console.log(`Controller ${index} connected:`, event.data);
+
+    // Get controller target and grip
+    const controller = this.controllers[index];
+    const controllerGrip = this.renderer.xr.getControllerGrip(index);
+
+    // Load dynamic controller models that show button states
+    const controllerModelFactory = new XRControllerModelFactory();
+    const controllerModel =
+      controllerModelFactory.createControllerModel(controllerGrip);
+    controllerGrip.add(controllerModel);
+
+    // Add grip to scene
+    this.scene.add(controllerGrip);
+
+    // Add laser pointer to controller (only for right hand)
+    if (index === 1) {
+      // Right controller
+      this.laserPointer = this.createLaserPointer(controller);
+    }
+
+    // Setup joystick input handling
+    this.setupJoystickInput(index);
   }
 
   hideMenu() {
@@ -1406,7 +1457,12 @@ class WebXRController {
     this.menuPanels.forEach((panel) => {
       panel.visible = false;
     });
-    this.menuPage = 0;
+
+    // Hide laser pointer
+    if (this.laserPointer) {
+      this.laserPointer.visible = false;
+    }
+
     this.currentCategory = null;
     this.selectedMenuItem = -1;
     this.vrLog("Menu closed");
