@@ -1037,6 +1037,7 @@ class WebXRController {
         this.lastButtonStates.leftMenu = menuPressed;
 
         if (triggerPressed && !this.lastButtonStates.leftTrigger) {
+          this.vrLog("Left trigger pressed!");
           this.handleMenuSelection();
         }
         this.lastButtonStates.leftTrigger = triggerPressed;
@@ -1049,6 +1050,7 @@ class WebXRController {
         this.lastButtonStates.rightMenu = menuPressed;
 
         if (triggerPressed && !this.lastButtonStates.rightTrigger) {
+          this.vrLog("Right trigger pressed!");
           this.handleMenuSelection();
         }
         this.lastButtonStates.rightTrigger = triggerPressed;
@@ -1179,7 +1181,21 @@ class WebXRController {
   }
 
   handleMenuSelection() {
-    if (!this.selectedButton) return;
+    this.vrLog(
+      `Menu selection - visible: ${this.menuVisible}, selected: ${!!this.selectedButton}`,
+    );
+
+    if (!this.menuVisible) {
+      this.vrLog("Menu not visible, ignoring trigger");
+      return;
+    }
+
+    if (!this.selectedButton) {
+      this.vrLog("No button selected");
+      return;
+    }
+
+    this.vrLog(`Executing button action`);
 
     if (this.selectedButton.panel.userData.onClick) {
       this.selectedButton.panel.userData.onClick();
@@ -1228,10 +1244,10 @@ class WebXRController {
   createMenuBackground() {
     // Create a group to hold all menu elements
     this.menuGroup = new THREE.Group();
-    this.menuGroup.position.set(0, 0, -2.5); // Position in front of camera
+    this.menuGroup.position.set(0, -0.2, -1.5); // Closer and lower
 
-    // Large semi-transparent background panel for menu
-    const bgGeometry = new THREE.PlaneGeometry(5, 3.5);
+    // Smaller background panel
+    const bgGeometry = new THREE.PlaneGeometry(2.5, 2); // Much smaller
     const bgMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
@@ -1251,21 +1267,21 @@ class WebXRController {
 
     this.menuGroup.add(this.menuBackground);
 
-    // Menu title
+    // Menu title - smaller
     const titleCanvas = document.createElement("canvas");
     const titleContext = titleCanvas.getContext("2d");
     titleCanvas.width = 512;
     titleCanvas.height = 128;
 
     const titleTexture = new THREE.CanvasTexture(titleCanvas);
-    const titleGeometry = new THREE.PlaneGeometry(4, 0.6);
+    const titleGeometry = new THREE.PlaneGeometry(2, 0.3); // Smaller title
     const titleMaterial = new THREE.MeshBasicMaterial({
       map: titleTexture,
       transparent: true,
     });
 
     this.menuTitlePanel = new THREE.Mesh(titleGeometry, titleMaterial);
-    this.menuTitlePanel.position.set(0, 1.5, 0); // Relative to menuGroup
+    this.menuTitlePanel.position.set(0, 0.85, 0.01); // Relative to menuGroup
     this.menuGroup.add(this.menuTitlePanel);
 
     this.menuTitleTextMesh = {
@@ -1282,7 +1298,7 @@ class WebXRController {
 
     // Add menu group to camera so it follows head movement
     this.camera.add(this.menuGroup);
-    this.scene.add(this.camera); // Make sure camera is in scene
+    this.scene.add(this.camera);
 
     // Start hidden
     this.menuGroup.visible = false;
@@ -1299,24 +1315,24 @@ class WebXRController {
 
   createMenuCategories() {
     const categories = [
-      { name: "Basic", key: "basic", x: -1.5, color: 0x4caf50 },
+      { name: "Basic", key: "basic", x: -0.8, color: 0x4caf50 },
       { name: "Tricks", key: "tricks", x: 0, color: 0xff9800 },
-      { name: "Movement", key: "movement", x: 1.5, color: 0x2196f3 },
+      { name: "Movement", key: "movement", x: 0.8, color: 0x2196f3 },
     ];
 
     this.categoryButtons = [];
 
-    categories.forEach((cat, index) => {
+    categories.forEach((cat) => {
       const button = this.createMenuButton(
         cat.name,
         cat.x,
-        0.5, // Relative to menuGroup
-        0.01, // Just in front of background
+        0.3, // Relative to menuGroup
+        0.01,
         cat.color,
         () => this.showCategory(cat.key),
       );
       this.categoryButtons.push(button);
-      this.menuGroup.add(button.panel); // Add to menuGroup instead of scene
+      this.menuGroup.add(button.panel);
     });
   }
 
@@ -1327,7 +1343,7 @@ class WebXRController {
     canvas.height = 128;
 
     const texture = new THREE.CanvasTexture(canvas);
-    const buttonGeometry = new THREE.PlaneGeometry(1.8, 0.7);
+    const buttonGeometry = new THREE.PlaneGeometry(0.7, 0.35); // Much smaller buttons
     const buttonMaterial = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
@@ -1351,8 +1367,6 @@ class WebXRController {
     button.add(wireframe);
     button.userData.wireframe = wireframe;
 
-    // DON'T add to scene here - caller will add to menuGroup
-
     const textMesh = {
       canvas,
       context,
@@ -1363,7 +1377,7 @@ class WebXRController {
         context.fillRect(0, 0, canvas.width, canvas.height);
 
         context.fillStyle = "#ffffff";
-        context.font = "bold 20px Arial";
+        context.font = "bold 16px Arial"; // Smaller font
         context.textAlign = "center";
         context.textBaseline = "middle";
 
@@ -1372,7 +1386,7 @@ class WebXRController {
           context.fillText(
             line,
             canvas.width / 2,
-            canvas.height / 2 + (i - 0.5) * 25,
+            canvas.height / 2 + (i - 0.5) * 20, // Tighter line spacing
           );
         });
 
@@ -1398,8 +1412,8 @@ class WebXRController {
     commands.forEach((cmd, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      const x = col * 2.2 - 1.1;
-      const y = 0.5 - row * 0.9;
+      const x = col * 0.9 - 0.45; // Tighter horizontal spacing
+      const y = 0.3 - row * 0.45; // Tighter vertical spacing
 
       const button = this.createMenuButton(
         `${cmd.name}\n${cmd.desc}`,
@@ -1413,11 +1427,11 @@ class WebXRController {
       this.menuGroup.add(button.panel);
     });
 
-    // Add a "Back" button
+    // Add a "Back" button at the bottom
     const backButton = this.createMenuButton(
       "← BACK",
       0,
-      -1.2,
+      -0.7,
       0.01,
       0xff5722,
       () => {
