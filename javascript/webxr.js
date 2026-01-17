@@ -56,6 +56,24 @@ class WebXRController {
     }
   }
 
+  async requestVideoPlayPermission() {
+    try {
+      // Try to play with user gesture
+      await this.videoElement.play();
+      this.vrLog("Video play permission granted!");
+      return true;
+    } catch (err) {
+      this.vrLog(`Video play blocked: ${err.name}`);
+
+      // If it's a NotAllowedError, we need user interaction
+      if (err.name === "NotAllowedError") {
+        this.vrLog("Need user interaction - press trigger!");
+        return false;
+      }
+      throw err;
+    }
+  }
+
   async init() {
     // Check if WebXR is supported
     if (!navigator.xr) {
@@ -352,6 +370,24 @@ class WebXRController {
     // Listen for controller input
     controller.addEventListener("selectstart", () => {
       console.log(`Controller ${controllerIndex} trigger pressed`);
+
+      // If video is pending, try to play it
+      if (
+        this.pendingVideoStream &&
+        this.videoElement &&
+        this.videoElement.srcObject
+      ) {
+        this.vrLog("Trigger pressed - attempting video play...");
+        this.videoElement
+          .play()
+          .then(() => {
+            this.vrLog("Video started via trigger!");
+            this.pendingVideoStream = false;
+          })
+          .catch((err) => {
+            this.vrLog(`Still failed: ${err.name}`);
+          });
+      }
     });
 
     // Monitor axes (joysticks) in animation loop
@@ -525,7 +561,7 @@ class WebXRController {
       const signalingServer = "10.0.0.43";
       this.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
 
-      // ADD THIS: Monitor track events directly
+      // Monitor track events directly
       this.rtc.pc.addEventListener("track", (event) => {
         this.vrLog(`Track event: ${event.track.kind}`);
         console.log("Track event received:", event);
@@ -538,14 +574,21 @@ class WebXRController {
             this.vrLog("Assigning video stream to element...");
             this.videoElement.srcObject = event.streams[0];
 
+            // Store the stream for later play attempt
+            this.pendingVideoStream = true;
+
             // Try to play it manually
             this.videoElement
               .play()
               .then(() => {
                 this.vrLog("Video play() succeeded!");
+                this.pendingVideoStream = false;
               })
               .catch((err) => {
-                this.vrLog(`Video play() failed: ${err.message}`);
+                this.vrLog(`Video play() failed: ${err.name}`);
+                if (err.name === "NotAllowedError") {
+                  this.vrLog("Press ANY controller button to start video!");
+                }
               });
           } else {
             this.vrLog("No streams in track event!");
@@ -599,7 +642,7 @@ class WebXRController {
           if (state === "open") {
             this.vrLog("Channel OPEN! Ready!");
 
-            // ADD THIS: Manually request video stream when channel is open
+            // Manually request video stream when channel is open
             this.vrLog("Requesting video stream...");
             this.rtc.publish("", "on", 2); // DataChannelType.VID = 2
 
