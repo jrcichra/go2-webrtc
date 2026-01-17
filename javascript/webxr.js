@@ -29,6 +29,8 @@ class WebXRController {
     this.menuVisible = false;
     this.selectedMenuItem = -1;
     this.currentCategory = null;
+    this.menuPage = 0; // Add this back
+    this.menuItemsPerPage = 8; // Add this back
     this.lastButtonStates = {
       leftMenu: false,
       rightMenu: false,
@@ -400,16 +402,18 @@ class WebXRController {
     // Add grip to scene
     this.scene.add(controllerGrip);
 
-    // Add laser pointer to controller (only for right hand)
+    // Add laser pointer to RIGHT controller (index 1)
     if (index === 1) {
-      // Right controller
       this.laserPointer = this.createLaserPointer(controller);
+      this.vrLog("Laser added to RIGHT controller");
     }
 
     // Setup joystick input handling
     this.setupJoystickInput(index);
 
-    this.vrLog(`Controller ${index} gamepad stored`);
+    this.vrLog(
+      `Controller ${index} (${index === 0 ? "LEFT" : "RIGHT"}) gamepad stored`,
+    );
   }
 
   onControllerDisconnected(event, index) {
@@ -423,9 +427,17 @@ class WebXRController {
   setupJoystickInput(controllerIndex) {
     const controller = this.controllers[controllerIndex];
 
-    // Listen for controller input
-    controller.addEventListener("selectstart", () => {
-      console.log(`Controller ${controllerIndex} trigger pressed`);
+    // Add select events for triggers (recommended Three.js approach)
+    controller.addEventListener("selectstart", (event) => {
+      console.log(
+        `Controller ${controllerIndex} trigger pressed (selectstart)`,
+      );
+      this.vrLog(`Controller ${controllerIndex} trigger pressed!`);
+
+      // If this is the right controller and menu is visible, handle selection
+      if (controllerIndex === 1 && this.menuVisible) {
+        this.handleMenuSelection();
+      }
 
       // If video is pending, try to play it
       if (this.videoElement && this.videoElement.srcObject) {
@@ -440,12 +452,16 @@ class WebXRController {
             .catch((err) => {
               this.vrLog(`Play error: ${err.name}`);
             });
-        } else {
-          this.vrLog("Video already playing");
         }
-      } else {
-        this.vrLog("Waiting for video stream...");
       }
+    });
+
+    controller.addEventListener("selectend", (event) => {
+      console.log(`Controller ${controllerIndex} trigger released (selectend)`);
+    });
+
+    controller.addEventListener("select", (event) => {
+      console.log(`Controller ${controllerIndex} trigger select (full press)`);
     });
 
     // Monitor axes (joysticks) in animation loop
@@ -791,9 +807,8 @@ class WebXRController {
   }
 
   createLaserPointer(controller) {
-    // Create laser line geometry
     const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array([0, 0, 0, 0, 0, -5]); // 5 meter ray
+    const positions = new Float32Array([0, 0, 0, 0, 0, -5]);
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 
     const material = new THREE.LineBasicMaterial({
@@ -804,7 +819,15 @@ class WebXRController {
     });
 
     const laser = new THREE.Line(geometry, material);
-    laser.visible = false; // Start hidden
+
+    // Add a dot at the end
+    const dotGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+    const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+    dot.position.set(0, 0, -5);
+    laser.add(dot);
+
+    laser.visible = false;
     controller.add(laser);
 
     return laser;
@@ -1021,49 +1044,21 @@ class WebXRController {
   updateMenuButtons() {
     if (!this.renderer.xr.isPresenting) return;
 
-    // Check both controllers directly
-    for (let i = 0; i < this.controllers.length; i++) {
-      const controller = this.controllers[i];
-      if (!controller || !controller.gamepad) continue;
+    // Only check RIGHT controller (index 1) for menu toggle
+    const rightController = this.controllers[1];
+    if (!rightController || !rightController.gamepad) return;
 
-      const gamepad = controller.gamepad;
-      const handedness = i === 0 ? "left" : "right"; // 0=left, 1=right
+    const gamepad = rightController.gamepad;
 
-      // Button 4 = Y/B button on Quest controllers
-      const menuButton = gamepad.buttons[4];
-      const menuPressed = menuButton && menuButton.pressed;
+    // Button 4 = Y/B button on Quest controllers for menu toggle
+    const menuButton = gamepad.buttons[4];
+    const menuPressed = menuButton && menuButton.pressed;
 
-      // Button 0 = trigger
-      const triggerButton = gamepad.buttons[0];
-      const triggerPressed = triggerButton && triggerButton.pressed;
-
-      // Check for menu button press (detect rising edge)
-      if (handedness === "left") {
-        if (menuPressed && !this.lastButtonStates.leftMenu) {
-          this.toggleMenu();
-        }
-        this.lastButtonStates.leftMenu = menuPressed;
-
-        if (triggerPressed && !this.lastButtonStates.leftTrigger) {
-          this.vrLog("Left trigger pressed!");
-          this.handleMenuSelection();
-        }
-        this.lastButtonStates.leftTrigger = triggerPressed;
-      }
-
-      if (handedness === "right") {
-        if (menuPressed && !this.lastButtonStates.rightMenu) {
-          this.toggleMenu();
-        }
-        this.lastButtonStates.rightMenu = menuPressed;
-
-        if (triggerPressed && !this.lastButtonStates.rightTrigger) {
-          this.vrLog("Right trigger pressed!");
-          this.handleMenuSelection();
-        }
-        this.lastButtonStates.rightTrigger = triggerPressed;
-      }
+    // Check for menu button press (detect rising edge)
+    if (menuPressed && !this.lastButtonStates.rightMenu) {
+      this.toggleMenu();
     }
+    this.lastButtonStates.rightMenu = menuPressed;
   }
 
   toggleMenu() {
@@ -1117,9 +1112,12 @@ class WebXRController {
   updateMenuRaycasting() {
     if (!this.menuVisible || !this.renderer.xr.isPresenting) return;
 
-    // Use controller 1 (right hand) for raycasting
+    // Use controller 1 (RIGHT hand) for raycasting
     const controller = this.controllers[1];
-    if (!controller) return;
+    if (!controller) {
+      this.vrLog("No right controller found!");
+      return;
+    }
 
     // Create raycaster from controller position
     const raycaster = new THREE.Raycaster();
@@ -1252,10 +1250,10 @@ class WebXRController {
   createMenuBackground() {
     // Create a group to hold all menu elements
     this.menuGroup = new THREE.Group();
-    this.menuGroup.position.set(0, -0.2, -1.5); // Closer and lower
+    this.menuGroup.position.set(0, 1.5, -2); // Position in world space in front of starting position
 
     // Smaller background panel
-    const bgGeometry = new THREE.PlaneGeometry(2.5, 2); // Much smaller
+    const bgGeometry = new THREE.PlaneGeometry(2.5, 2);
     const bgMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
@@ -1282,14 +1280,14 @@ class WebXRController {
     titleCanvas.height = 128;
 
     const titleTexture = new THREE.CanvasTexture(titleCanvas);
-    const titleGeometry = new THREE.PlaneGeometry(2, 0.3); // Smaller title
+    const titleGeometry = new THREE.PlaneGeometry(2, 0.3);
     const titleMaterial = new THREE.MeshBasicMaterial({
       map: titleTexture,
       transparent: true,
     });
 
     this.menuTitlePanel = new THREE.Mesh(titleGeometry, titleMaterial);
-    this.menuTitlePanel.position.set(0, 0.85, 0.01); // Relative to menuGroup
+    this.menuTitlePanel.position.set(0, 0.85, 0.01);
     this.menuGroup.add(this.menuTitlePanel);
 
     this.menuTitleTextMesh = {
@@ -1304,9 +1302,8 @@ class WebXRController {
 
     this.menuTitleTextMesh.updateText("ROBOT COMMANDS");
 
-    // Add menu group to camera so it follows head movement
-    this.camera.add(this.menuGroup);
-    this.scene.add(this.camera);
+    // Add menu group to SCENE (not camera) so it stays in world space
+    this.scene.add(this.menuGroup);
 
     // Start hidden
     this.menuGroup.visible = false;
@@ -1417,11 +1414,19 @@ class WebXRController {
     this.currentCategory = categoryKey;
     this.commandButtons = [];
 
-    commands.forEach((cmd, index) => {
+    // Calculate pagination
+    const startIndex = this.menuPage * this.menuItemsPerPage;
+    const endIndex = Math.min(
+      startIndex + this.menuItemsPerPage,
+      commands.length,
+    );
+    const visibleCommands = commands.slice(startIndex, endIndex);
+
+    visibleCommands.forEach((cmd, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      const x = col * 0.9 - 0.45; // Tighter horizontal spacing
-      const y = 0.3 - row * 0.45; // Tighter vertical spacing
+      const x = col * 0.9 - 0.45;
+      const y = 0.3 - row * 0.45;
 
       const button = this.createMenuButton(
         `${cmd.name}\n${cmd.desc}`,
@@ -1435,16 +1440,22 @@ class WebXRController {
       this.menuGroup.add(button.panel);
     });
 
+    // Add navigation buttons if there are more commands than fit on one page
+    if (commands.length > this.menuItemsPerPage) {
+      this.addNavigationButtons(commands.length);
+    }
+
     // Add a "Back" button at the bottom
     const backButton = this.createMenuButton(
       "← BACK",
       0,
-      -0.7,
+      -0.9, // Move down slightly to make room for nav buttons
       0.01,
       0xff5722,
       () => {
         this.hideCommandButtons();
         this.currentCategory = null;
+        this.menuPage = 0; // Reset page when going back
         this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
       },
     );
@@ -1457,9 +1468,16 @@ class WebXRController {
   hideCommandButtons() {
     if (this.commandButtons) {
       this.commandButtons.forEach((button) => {
-        this.menuGroup.remove(button.panel); // Remove from menuGroup
+        this.menuGroup.remove(button.panel);
       });
       this.commandButtons = [];
+    }
+
+    if (this.navButtons) {
+      this.navButtons.forEach((button) => {
+        this.menuGroup.remove(button.panel);
+      });
+      this.navButtons = [];
     }
   }
 
@@ -1469,10 +1487,10 @@ class WebXRController {
 
     if (this.menuPage > 0) {
       const prevButton = this.createMenuButton(
-        "Previous\nPage",
-        -2.5,
-        -0.5,
-        -1.9,
+        "◄ PREV",
+        -0.9,
+        -0.8,
+        0.01,
         0xff5722,
         () => {
           this.menuPage--;
@@ -1480,14 +1498,15 @@ class WebXRController {
         },
       );
       this.navButtons.push(prevButton);
+      this.menuGroup.add(prevButton.panel); // Add to menuGroup
     }
 
     if (this.menuPage < totalPages - 1) {
       const nextButton = this.createMenuButton(
-        "Next\nPage",
-        2.5,
-        -0.5,
-        -1.9,
+        "NEXT ►",
+        0.9,
+        -0.8,
+        0.01,
         0xff5722,
         () => {
           this.menuPage++;
@@ -1495,6 +1514,21 @@ class WebXRController {
         },
       );
       this.navButtons.push(nextButton);
+      this.menuGroup.add(nextButton.panel); // Add to menuGroup
+    }
+
+    // Show page indicator in center if there are multiple pages
+    if (totalPages > 1) {
+      const pageIndicator = this.createMenuButton(
+        `${this.menuPage + 1}/${totalPages}`,
+        0,
+        -0.8,
+        0.01,
+        0x333333,
+        () => {}, // No action, just shows info
+      );
+      this.navButtons.push(pageIndicator);
+      this.menuGroup.add(pageIndicator.panel);
     }
   }
 
