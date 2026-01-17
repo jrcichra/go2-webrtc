@@ -17,30 +17,28 @@ class WebXRController {
     this.uiPanels = [];
     this.debugTextMesh = null;
     this.statusTextMesh = null;
-    this.hudTextMesh = null;
-    this.batteryTextMesh = null;
-    this.sensorsTextMesh = null;
     this.rtc = null;
     this.isConnected = false;
     this.lastMovementTime = 0;
-    this.robotState = {}; // Store current robot state data
+    this.robotState = {};
     this.lastStateUpdate = 0;
-    this.debugLogs = []; // Store debug messages for VR panel
-    this.maxDebugLogs = 10; // Keep last 10 messages
+    this.debugLogs = [];
+    this.maxDebugLogs = 10;
 
     // Menu system properties
     this.menuVisible = false;
     this.menuPanels = [];
-    this.menuItems = [];
     this.selectedMenuItem = -1;
-    this.menuPage = 0;
-    this.menuItemsPerPage = 6;
-    this.menuInitialized = false;
-    this.menuCreated = false;
-    this.lastButtonStates = { menu: false };
+    this.currentCategory = null;
+    this.lastButtonStates = {
+      leftMenu: false,
+      rightMenu: false,
+      leftTrigger: false,
+      rightTrigger: false,
+    };
 
     // Movement speed multiplier (0.0 to 1.0)
-    this.movementSpeed = 0.4; // Reduce speed to 40% of full
+    this.movementSpeed = 0.4;
 
     this.init();
   }
@@ -122,7 +120,6 @@ class WebXRController {
   setupScene() {
     // Create scene
     this.scene = new THREE.Scene();
-    // Start with dark background, will switch to passthrough when in VR
     this.scene.background = new THREE.Color(0x1f1f1f);
 
     // Create camera
@@ -156,12 +153,8 @@ class WebXRController {
     // Setup controllers
     this.setupControllers();
 
-    // Initialize menu system
+    // Create menu (but keep it hidden)
     this.createCommandMenu();
-    this.menuInitialized = true;
-    this.menuCreated = true;
-
-    // No teleportation needed - user just wants to control robot from VR
   }
 
   createVideoScreen() {
@@ -280,61 +273,27 @@ class WebXRController {
       this.vrLog("Video element ready, waiting for stream...");
     }
   }
+
   createUIPanels() {
-    // Create debug info panel with text
+    // Left panel: Debug log
     const debugPanel = this.createTextPanel(
       "DEBUG LOG\n(waiting for events...)",
-      -3,
+      -3.5,
       1.5,
       -3,
     );
     this.debugTextMesh = debugPanel.textMesh;
     this.uiPanels.push(debugPanel.panel);
 
-    // Create connection status panel
+    // Right panel: Status
     const statusPanel = this.createTextPanel(
-      `STATUS\nRobot: 10.0.0.207\nConnection: Connecting...\nVersion: v${WEBXR_VERSION}`,
-      3,
+      `STATUS\nRobot: 10.0.0.207\nConnection: Connecting...\nSpeed: ${Math.round(this.movementSpeed * 100)}%\nMenu: Press Y/B`,
+      3.5,
       1.5,
       -3,
     );
     this.statusTextMesh = statusPanel.textMesh;
     this.uiPanels.push(statusPanel.panel);
-
-    // Create HUD panels for robot information
-    this.createHUDPanels();
-  }
-
-  createHUDPanels() {
-    // Movement/Control HUD - positioned above video screen
-    const hudPanel = this.createTextPanel(
-      "MOVEMENT HUD\nVelocity: --\nMode: Manual\nGait: Walk",
-      -4,
-      3.5,
-      -4,
-    );
-    this.hudTextMesh = hudPanel.textMesh;
-    this.uiPanels.push(hudPanel.panel);
-
-    // Battery/Sensors HUD - positioned to the left of video screen
-    const batteryPanel = this.createTextPanel(
-      "BATTERY & SENSORS\nBattery: --%\nTemp: --°C\nLidar: --\nCameras: --",
-      -5,
-      2,
-      -3,
-    );
-    this.batteryTextMesh = batteryPanel.textMesh;
-    this.uiPanels.push(batteryPanel.panel);
-
-    // Robot State HUD - positioned to the right of video screen
-    const sensorsPanel = this.createTextPanel(
-      "ROBOT STATE\nRoll: --°\nPitch: --°\nYaw: --°\nObstacles: --m",
-      5,
-      2,
-      -3,
-    );
-    this.sensorsTextMesh = sensorsPanel.textMesh;
-    this.uiPanels.push(sensorsPanel.panel);
   }
 
   createTextPanel(text, x, y, z) {
@@ -820,40 +779,27 @@ class WebXRController {
   render(timestamp, frame) {
     if (!frame) return;
 
-    // Check if we just entered VR mode and connect to robot
     if (this.renderer.xr.isPresenting && !this.isConnected && !this.rtc) {
       this.connectToRobot();
     }
 
-    // Enable passthrough background in VR
     if (this.renderer.xr.isPresenting && this.scene.background !== null) {
       this.scene.background = null;
     }
 
-    // Switch back to dark background when exiting VR
     if (!this.renderer.xr.isPresenting && this.scene.background === null) {
       this.scene.background = new THREE.Color(0x1f1f1f);
     }
 
-    // Update video texture every frame when video is playing
+    // Update video texture
     if (this.videoTexture && this.videoElement && this.videoElement.srcObject) {
       try {
         if (
           this.videoElement.readyState >= this.videoElement.HAVE_CURRENT_DATA
         ) {
           this.videoTexture.needsUpdate = true;
-
-          // Debug log occasionally (every 120 frames)
-          if (!this.videoUpdateCounter) this.videoUpdateCounter = 0;
-          this.videoUpdateCounter++;
-          if (this.videoUpdateCounter % 120 === 0) {
-            this.vrLog(
-              `Video updating: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
-            );
-          }
         }
       } catch (err) {
-        // Silently ignore texture update errors
         if (!this.videoErrorLogged) {
           this.vrLog(`Video texture error: ${err.message}`);
           this.videoErrorLogged = true;
@@ -864,13 +810,12 @@ class WebXRController {
     // Update joystick input
     this.updateJoystickMovement();
 
-    // Update menu button input and raycasting if menu is initialized
-    if (this.menuInitialized) {
-      this.updateMenuButtons();
+    // Update menu buttons and raycasting
+    this.updateMenuButtons();
+    if (this.menuVisible) {
       this.updateMenuRaycasting();
     }
 
-    // Render the scene
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1046,24 +991,51 @@ class WebXRController {
     if (!session) return;
 
     for (const source of session.inputSources) {
-      if (source.gamepad) {
-        const gamepad = source.gamepad;
+      if (!source.gamepad) continue;
 
-        // Check for menu button (button 5 is typically B/Y button on Quest controllers)
-        const menuButtonPressed =
-          gamepad.buttons[5] && gamepad.buttons[5].pressed;
+      const gamepad = source.gamepad;
+      const handedness = source.handedness;
 
-        if (menuButtonPressed && !this.lastButtonStates.menu) {
-          // Menu button just pressed
-          if (this.menuVisible) {
-            this.hideMenu();
-          } else {
-            this.showMenu();
-          }
+      // Button 4 = Y/B button on Quest controllers
+      const menuButton = gamepad.buttons[4];
+      const menuPressed = menuButton && menuButton.pressed;
+
+      // Button 0 = trigger
+      const triggerButton = gamepad.buttons[0];
+      const triggerPressed = triggerButton && triggerButton.pressed;
+
+      // Check for menu button press (detect rising edge)
+      if (handedness === "left") {
+        if (menuPressed && !this.lastButtonStates.leftMenu) {
+          this.toggleMenu();
         }
+        this.lastButtonStates.leftMenu = menuPressed;
 
-        this.lastButtonStates.menu = menuButtonPressed;
+        if (triggerPressed && !this.lastButtonStates.leftTrigger) {
+          this.handleMenuSelection();
+        }
+        this.lastButtonStates.leftTrigger = triggerPressed;
       }
+
+      if (handedness === "right") {
+        if (menuPressed && !this.lastButtonStates.rightMenu) {
+          this.toggleMenu();
+        }
+        this.lastButtonStates.rightMenu = menuPressed;
+
+        if (triggerPressed && !this.lastButtonStates.rightTrigger) {
+          this.handleMenuSelection();
+        }
+        this.lastButtonStates.rightTrigger = triggerPressed;
+      }
+    }
+  }
+
+  toggleMenu() {
+    if (this.menuVisible) {
+      this.hideMenu();
+    } else {
+      this.showMenu();
     }
   }
 
@@ -1145,8 +1117,6 @@ class WebXRController {
         { id: 1005, name: "Lie Down", desc: "Lie down flat" },
         { id: 1009, name: "Sit", desc: "Sit position" },
         { id: 1003, name: "Stop", desc: "Stop all movement" },
-        { id: 1001, name: "Damp", desc: "Damp mode" },
-        { id: 1002, name: "Balance", desc: "Balance stand" },
       ],
       tricks: [
         { id: 1016, name: "Hello", desc: "Wave hello" },
@@ -1154,19 +1124,8 @@ class WebXRController {
         { id: 1030, name: "Front Flip", desc: "Do a flip" },
         { id: 1031, name: "Jump", desc: "Jump forward" },
         { id: 1032, name: "Pounce", desc: "Pounce attack" },
-        { id: 1029, name: "Scrape", desc: "Scrape ground" },
-        { id: 1033, name: "Wiggle", desc: "Wiggle hips" },
-        { id: 1036, name: "Heart", desc: "Finger heart" },
-        { id: 1021, name: "Wallow", desc: "Roll around" },
         { id: 1022, name: "Dance 1", desc: "Dance routine 1" },
         { id: 1023, name: "Dance 2", desc: "Dance routine 2" },
-      ],
-      movement: [
-        { id: 1011, name: "Switch Gait", desc: "Change walk style" },
-        { id: 1013, name: "Body Height", desc: "Adjust height" },
-        { id: 1014, name: "Foot Height", desc: "Adjust foot raise" },
-        { id: 1015, name: "Speed", desc: "Change speed level" },
-        { id: 1035, name: "Eco Mode", desc: "Economic gait" },
       ],
     };
 
@@ -1176,31 +1135,71 @@ class WebXRController {
     // Create menu category buttons
     this.createMenuCategories();
 
-    // Initially hide menu
+    // IMPORTANT: Start hidden
     this.hideMenu();
+    this.vrLog("Menu created (hidden)");
   }
 
   createMenuBackground() {
     // Large semi-transparent background panel for menu
-    const bgGeometry = new THREE.PlaneGeometry(6, 4);
+    const bgGeometry = new THREE.PlaneGeometry(5, 3.5);
     const bgMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.85,
     });
     this.menuBackground = new THREE.Mesh(bgGeometry, bgMaterial);
-    this.menuBackground.position.set(0, 1.5, -2);
+    this.menuBackground.position.set(0, 1.8, -2.5);
+
+    // Add border
+    const borderGeometry = new THREE.EdgesGeometry(bgGeometry);
+    const borderMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      linewidth: 2,
+    });
+    const border = new THREE.LineSegments(borderGeometry, borderMaterial);
+    this.menuBackground.add(border);
+
     this.scene.add(this.menuBackground);
 
     // Menu title
-    this.menuTitlePanel = this.createTextPanel(
-      "ROBOT COMMAND MENU\nPress B/Y to toggle menu",
-      0,
-      3.2,
-      -1.8,
-    );
-    this.scene.add(this.menuTitlePanel.panel);
-    this.menuPanels.push(this.menuTitlePanel.panel);
+    const titleCanvas = document.createElement("canvas");
+    const titleContext = titleCanvas.getContext("2d");
+    titleCanvas.width = 512;
+    titleCanvas.height = 128;
+
+    const titleTexture = new THREE.CanvasTexture(titleCanvas);
+    const titleGeometry = new THREE.PlaneGeometry(4, 0.6);
+    const titleMaterial = new THREE.MeshBasicMaterial({
+      map: titleTexture,
+      transparent: true,
+    });
+
+    this.menuTitlePanel = new THREE.Mesh(titleGeometry, titleMaterial);
+    this.menuTitlePanel.position.set(0, 3.2, -2.4);
+    this.scene.add(this.menuTitlePanel);
+
+    this.menuTitleTextMesh = {
+      canvas: titleCanvas,
+      context: titleContext,
+      texture: titleTexture,
+      updateText: (text) => {
+        this.renderMenuText(titleContext, titleCanvas, text);
+        titleTexture.needsUpdate = true;
+      },
+    };
+
+    this.menuTitleTextMesh.updateText("ROBOT COMMANDS");
+    this.menuPanels.push(this.menuBackground, this.menuTitlePanel);
+  }
+
+  renderMenuText(context, canvas, text) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#00ff00";
+    context.font = "bold 40px Arial";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
   }
 
   createMenuCategories() {
@@ -1227,37 +1226,68 @@ class WebXRController {
   }
 
   createMenuButton(text, x, y, z, color, onClick) {
-    // Button background
-    const buttonGeometry = new THREE.PlaneGeometry(1.5, 0.8);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    canvas.width = 256;
+    canvas.height = 128;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const buttonGeometry = new THREE.PlaneGeometry(1.8, 0.7);
     const buttonMaterial = new THREE.MeshBasicMaterial({
-      color: color,
+      map: texture,
       transparent: true,
-      opacity: 0.9,
     });
+
     const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
     button.position.set(x, y, z);
-    button.userData = { onClick, type: "button" };
-
-    // Button text
-    const textPanel = this.createTextPanel(text, x, y, z + 0.01);
+    button.userData = { onClick, type: "button", color };
 
     // Add wireframe for selection highlight
     const wireframeGeometry = new THREE.EdgesGeometry(buttonGeometry);
     const wireframeMaterial = new THREE.LineBasicMaterial({
-      color: 0xffffff,
+      color: 0xffff00,
       linewidth: 3,
     });
     const wireframe = new THREE.LineSegments(
       wireframeGeometry,
       wireframeMaterial,
     );
-    button.add(wireframe);
     wireframe.visible = false;
+    button.add(wireframe);
     button.userData.wireframe = wireframe;
 
     this.scene.add(button);
 
-    return { panel: button, textMesh: textPanel.textMesh, wireframe };
+    const textMesh = {
+      canvas,
+      context,
+      texture,
+      updateText: (newText) => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.fillStyle = "#ffffff";
+        context.font = "bold 20px Arial";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+
+        const lines = newText.split("\n");
+        lines.forEach((line, i) => {
+          context.fillText(
+            line,
+            canvas.width / 2,
+            canvas.height / 2 + (i - 0.5) * 25,
+          );
+        });
+
+        texture.needsUpdate = true;
+      },
+    };
+
+    textMesh.updateText(text);
+
+    return { panel: button, textMesh, wireframe };
   }
 
   showCategory(categoryKey) {
@@ -1270,38 +1300,25 @@ class WebXRController {
     this.currentCategory = categoryKey;
     this.commandButtons = [];
 
-    // Calculate pagination
-    const startIndex = this.menuPage * this.menuItemsPerPage;
-    const endIndex = Math.min(
-      startIndex + this.menuItemsPerPage,
-      commands.length,
-    );
-    const visibleCommands = commands.slice(startIndex, endIndex);
-
-    visibleCommands.forEach((cmd, index) => {
-      const x = (index % 2) * 2.5 - 1.25; // Two columns
-      const y = 1.2 - Math.floor(index / 2) * 0.9;
+    commands.forEach((cmd, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const x = col * 2.2 - 1.1;
+      const y = 2.2 - row * 0.9;
 
       const button = this.createMenuButton(
         `${cmd.name}\n${cmd.desc}`,
         x,
         y,
-        -1.9,
-        0x666666,
+        -2.4,
+        0x555555,
         () => this.sendCommand(cmd.id, cmd.name),
       );
       this.commandButtons.push(button);
       this.menuPanels.push(button.panel);
     });
 
-    // Add navigation buttons if needed
-    if (commands.length > this.menuItemsPerPage) {
-      this.addNavigationButtons(commands.length);
-    }
-
-    this.updateMenuTitle(
-      `${categoryKey.toUpperCase()} COMMANDS\nPage ${this.menuPage + 1}`,
-    );
+    this.menuTitleTextMesh.updateText(`${categoryKey.toUpperCase()} COMMANDS`);
   }
 
   hideCommandButtons() {
