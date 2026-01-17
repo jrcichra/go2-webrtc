@@ -1167,8 +1167,14 @@ class WebXRController {
       });
     }
 
-    // Find intersections
-    const intersects = raycaster.intersectObjects(interactiveObjects);
+    // Find intersections - ONLY check menu objects, not all scene objects
+    const intersects = raycaster.intersectObjects(interactiveObjects, false); // false = don't check children recursively
+
+    // Debug: log what we're hitting
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      this.vrLog(`Raycast hit at distance: ${hit.distance.toFixed(2)}m`);
+    }
 
     // Highlight selected object
     if (intersects.length > 0) {
@@ -1192,9 +1198,20 @@ class WebXRController {
       if (selectedButton && selectedButton.wireframe) {
         selectedButton.wireframe.visible = true;
         this.selectedButton = selectedButton;
+        // Only log occasionally to avoid spam
+        if (
+          !this.lastLoggedButton ||
+          this.lastLoggedButton !== selectedButton
+        ) {
+          this.vrLog(
+            `Hovering: ${selectedButton.panel.userData.type || "button"}`,
+          );
+          this.lastLoggedButton = selectedButton;
+        }
       }
     } else {
       this.selectedButton = null;
+      this.lastLoggedButton = null;
     }
   }
 
