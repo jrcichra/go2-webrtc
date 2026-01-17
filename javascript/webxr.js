@@ -26,6 +26,36 @@ class WebXRController {
     this.init();
   }
 
+  checkVideoStatus() {
+    if (!this.videoElement) {
+      this.vrLog("No video element!");
+      return;
+    }
+
+    const status = {
+      hasStream: !!this.videoElement.srcObject,
+      paused: this.videoElement.paused,
+      ended: this.videoElement.ended,
+      readyState: this.videoElement.readyState,
+      videoWidth: this.videoElement.videoWidth,
+      videoHeight: this.videoElement.videoHeight,
+      currentTime: this.videoElement.currentTime,
+    };
+
+    this.vrLog(`Video status: ${JSON.stringify(status)}`);
+    console.log("Full video status:", status);
+
+    if (this.videoElement.srcObject) {
+      const tracks = this.videoElement.srcObject.getVideoTracks();
+      this.vrLog(`Video tracks: ${tracks.length}`);
+      tracks.forEach((track, i) => {
+        this.vrLog(
+          `Track ${i}: ${track.enabled ? "enabled" : "disabled"}, ${track.readyState}`,
+        );
+      });
+    }
+  }
+
   async init() {
     // Check if WebXR is supported
     if (!navigator.xr) {
@@ -131,13 +161,34 @@ class WebXRController {
       this.videoScreen.material.map = this.videoTexture;
       this.videoScreen.material.needsUpdate = true;
 
-      // ADD THIS: Listen for when video actually starts playing
-      this.videoElement.addEventListener("playing", () => {
-        this.vrLog("Video stream active!");
-        this.videoTexture.needsUpdate = true;
+      // Add event listeners to debug video state
+      this.videoElement.addEventListener("loadedmetadata", () => {
+        this.vrLog(
+          `Video metadata loaded: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
+        );
       });
 
-      console.log("Video texture set up");
+      this.videoElement.addEventListener("loadeddata", () => {
+        this.vrLog("Video data loaded");
+      });
+
+      this.videoElement.addEventListener("playing", () => {
+        this.vrLog("Video stream PLAYING!");
+        this.videoTexture.needsUpdate = true;
+        // Change screen material to show it's active
+        this.videoScreen.material.opacity = 1.0;
+        this.videoScreen.material.needsUpdate = true;
+      });
+
+      this.videoElement.addEventListener("error", (e) => {
+        this.vrLog(`Video ERROR: ${e.message}`);
+      });
+
+      this.videoElement.addEventListener("stalled", () => {
+        this.vrLog("Video stalled");
+      });
+
+      console.log("Video texture set up with event listeners");
     }
   }
 
@@ -518,6 +569,11 @@ class WebXRController {
       monitorChannel(); // Check immediately
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
+      // ADD THIS: Periodically check video status
+      this.videoStatusChecker = setInterval(() => {
+        this.checkVideoStatus();
+      }, 5000); // Check every 5 seconds
+
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
       );
@@ -551,9 +607,24 @@ class WebXRController {
       this.scene.background = new THREE.Color(0x1f1f1f);
     }
 
-    //  Update video texture every frame when video is playing
-    if (this.videoTexture && this.videoElement && !this.videoElement.paused) {
-      this.videoTexture.needsUpdate = true;
+    // Update video texture every frame when video is playing
+    if (this.videoTexture && this.videoElement) {
+      if (
+        !this.videoElement.paused &&
+        !this.videoElement.ended &&
+        this.videoElement.readyState >= 2
+      ) {
+        this.videoTexture.needsUpdate = true;
+
+        // Debug log occasionally (every 120 frames)
+        if (!this.videoUpdateCounter) this.videoUpdateCounter = 0;
+        this.videoUpdateCounter++;
+        if (this.videoUpdateCounter % 120 === 0) {
+          this.vrLog(
+            `Video updating: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
+          );
+        }
+      }
     }
 
     // Update joystick input
