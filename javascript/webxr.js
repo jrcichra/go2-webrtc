@@ -435,8 +435,11 @@ class WebXRController {
       );
       this.vrLog(`Controller ${controllerIndex} trigger pressed!`);
 
-      // DON'T use trigger for menu selection anymore - B button does that now
-      // Trigger is only for video playback
+      // If this is the right controller and menu is visible, handle selection
+      if (controllerIndex === 1 && this.menuVisible) {
+        this.vrLog("Right trigger - selecting menu item");
+        this.handleMenuSelection();
+      }
 
       // If video is pending, try to play it
       if (this.videoElement && this.videoElement.srcObject) {
@@ -1053,24 +1056,11 @@ class WebXRController {
     const menuButton = gamepad.buttons[5];
     const menuPressed = menuButton && menuButton.pressed;
 
-    // Button 4 = B button for selecting menu items
-    const selectButton = gamepad.buttons[4];
-    const selectPressed = selectButton && selectButton.pressed;
-
     // Check for A button press to toggle menu (detect rising edge)
     if (menuPressed && !this.lastButtonStates.rightMenu) {
       this.toggleMenu();
     }
     this.lastButtonStates.rightMenu = menuPressed;
-
-    // Check for B button press to select menu items (detect rising edge)
-    if (selectPressed && !this.lastButtonStates.rightSelect) {
-      if (this.menuVisible) {
-        this.vrLog("B button pressed - selecting item");
-        this.handleMenuSelection();
-      }
-    }
-    this.lastButtonStates.rightSelect = selectPressed;
   }
 
   toggleMenu() {
@@ -1095,6 +1085,14 @@ class WebXRController {
 
     // Reset to category view
     this.hideCommandButtons();
+
+    // Make sure category buttons are visible
+    if (this.categoryButtons) {
+      this.categoryButtons.forEach((b) => {
+        b.panel.visible = true;
+      });
+    }
+
     this.currentCategory = null;
     this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
 
@@ -1441,6 +1439,13 @@ class WebXRController {
     // Hide existing command buttons
     this.hideCommandButtons();
 
+    // IMPORTANT: Hide category buttons when showing a submenu
+    if (this.categoryButtons) {
+      this.categoryButtons.forEach((b) => {
+        b.panel.visible = false;
+      });
+    }
+
     const commands = this.robotCommands[categoryKey];
     if (!commands) return;
 
@@ -1482,13 +1487,19 @@ class WebXRController {
     const backButton = this.createMenuButton(
       "← BACK",
       0,
-      -0.9, // Move down slightly to make room for nav buttons
+      -0.9,
       0.01,
       0xff5722,
       () => {
         this.hideCommandButtons();
+        // IMPORTANT: Show category buttons again when going back
+        if (this.categoryButtons) {
+          this.categoryButtons.forEach((b) => {
+            b.panel.visible = true;
+          });
+        }
         this.currentCategory = null;
-        this.menuPage = 0; // Reset page when going back
+        this.menuPage = 0;
         this.menuTitleTextMesh.updateText("ROBOT COMMANDS - Select Category");
       },
     );
