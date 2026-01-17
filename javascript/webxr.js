@@ -128,15 +128,29 @@ class WebXRController {
     // Create a large virtual screen for video feed (like a big TV in VR)
     const screenGeometry = new THREE.PlaneGeometry(8, 4.5); // 16:9 aspect ratio
     const screenMaterial = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.8,
+      color: 0xff0000, // Start with RED so we can see it
+      side: THREE.DoubleSide, // Visible from both sides
     });
     this.videoScreen = new THREE.Mesh(screenGeometry, screenMaterial);
     this.videoScreen.position.set(0, 2, -5); // Position in front of user
     this.scene.add(this.videoScreen);
 
-    console.log("Video screen created");
+    console.log("Video screen created at position:", this.videoScreen.position);
+    this.vrLog(
+      `Screen at: ${this.videoScreen.position.x}, ${this.videoScreen.position.y}, ${this.videoScreen.position.z}`,
+    );
+
+    // Add a wireframe box around the screen to make it easier to locate
+    const wireframeGeometry = new THREE.EdgesGeometry(screenGeometry);
+    const wireframeMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      linewidth: 2,
+    });
+    const wireframe = new THREE.LineSegments(
+      wireframeGeometry,
+      wireframeMaterial,
+    );
+    this.videoScreen.add(wireframe);
 
     // Create hidden video element for WebRTC video stream
     this.videoElement = document.createElement("video");
@@ -144,6 +158,7 @@ class WebXRController {
     this.videoElement.style.display = "none";
     this.videoElement.autoplay = true;
     this.videoElement.muted = true;
+    this.videoElement.playsInline = true; // Important for mobile/VR
     document.body.appendChild(this.videoElement);
 
     // Create video texture and apply to screen material
@@ -157,9 +172,7 @@ class WebXRController {
       this.videoTexture.magFilter = THREE.LinearFilter;
       this.videoTexture.format = THREE.RGBAFormat;
 
-      // Update the video screen material to use the video texture
-      this.videoScreen.material.map = this.videoTexture;
-      this.videoScreen.material.needsUpdate = true;
+      // Don't apply texture yet - keep it red until video is ready
 
       // Add event listeners to debug video state
       this.videoElement.addEventListener("loadedmetadata", () => {
@@ -173,22 +186,31 @@ class WebXRController {
       });
 
       this.videoElement.addEventListener("playing", () => {
-        this.vrLog("Video stream PLAYING!");
-        this.videoTexture.needsUpdate = true;
-        // Change screen material to show it's active
-        this.videoScreen.material.opacity = 1.0;
+        this.vrLog("Video stream PLAYING! Switching to video texture...");
+
+        // NOW switch from red to video texture
+        this.videoScreen.material.map = this.videoTexture;
+        this.videoScreen.material.color.set(0xffffff); // Remove red tint
         this.videoScreen.material.needsUpdate = true;
+        this.videoTexture.needsUpdate = true;
+
+        this.vrLog("Video texture applied to screen!");
       });
 
       this.videoElement.addEventListener("error", (e) => {
-        this.vrLog(`Video ERROR: ${e.message}`);
+        this.vrLog(`Video ERROR: ${e.message || "Unknown error"}`);
       });
 
       this.videoElement.addEventListener("stalled", () => {
         this.vrLog("Video stalled");
       });
 
+      this.videoElement.addEventListener("waiting", () => {
+        this.vrLog("Video waiting for data");
+      });
+
       console.log("Video texture set up with event listeners");
+      this.vrLog("Video element ready, waiting for stream...");
     }
   }
 
