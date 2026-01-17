@@ -36,6 +36,7 @@ class WebXRController {
       rightMenu: false,
       leftTrigger: false,
       rightTrigger: false,
+      rightSelect: false, // Add this
     };
 
     // Movement speed multiplier (0.0 to 1.0)
@@ -434,10 +435,8 @@ class WebXRController {
       );
       this.vrLog(`Controller ${controllerIndex} trigger pressed!`);
 
-      // If this is the right controller and menu is visible, handle selection
-      if (controllerIndex === 1 && this.menuVisible) {
-        this.handleMenuSelection();
-      }
+      // DON'T use trigger for menu selection anymore - B button does that now
+      // Trigger is only for video playback
 
       // If video is pending, try to play it
       if (this.videoElement && this.videoElement.srcObject) {
@@ -1044,21 +1043,34 @@ class WebXRController {
   updateMenuButtons() {
     if (!this.renderer.xr.isPresenting) return;
 
-    // Only check RIGHT controller (index 1) for menu toggle
+    // Only check RIGHT controller (index 1) for menu interactions
     const rightController = this.controllers[1];
     if (!rightController || !rightController.gamepad) return;
 
     const gamepad = rightController.gamepad;
 
-    // Button 4 = Y/B button on Quest controllers for menu toggle
-    const menuButton = gamepad.buttons[4];
+    // Button 5 = A button on Quest controllers for menu toggle
+    const menuButton = gamepad.buttons[5];
     const menuPressed = menuButton && menuButton.pressed;
 
-    // Check for menu button press (detect rising edge)
+    // Button 4 = B button for selecting menu items
+    const selectButton = gamepad.buttons[4];
+    const selectPressed = selectButton && selectButton.pressed;
+
+    // Check for A button press to toggle menu (detect rising edge)
     if (menuPressed && !this.lastButtonStates.rightMenu) {
       this.toggleMenu();
     }
     this.lastButtonStates.rightMenu = menuPressed;
+
+    // Check for B button press to select menu items (detect rising edge)
+    if (selectPressed && !this.lastButtonStates.rightSelect) {
+      if (this.menuVisible) {
+        this.vrLog("B button pressed - selecting item");
+        this.handleMenuSelection();
+      }
+    }
+    this.lastButtonStates.rightSelect = selectPressed;
   }
 
   toggleMenu() {
@@ -1188,26 +1200,30 @@ class WebXRController {
 
   handleMenuSelection() {
     this.vrLog(
-      `Menu selection - visible: ${this.menuVisible}, selected: ${!!this.selectedButton}`,
+      `Selection attempt - visible: ${this.menuVisible}, selected: ${!!this.selectedButton}`,
     );
 
     if (!this.menuVisible) {
-      this.vrLog("Menu not visible, ignoring trigger");
+      this.vrLog("Menu not visible, ignoring button");
       return;
     }
 
     if (!this.selectedButton) {
-      this.vrLog("No button selected");
+      this.vrLog("No button highlighted by raycast");
       return;
     }
 
-    this.vrLog(`Executing button action`);
+    this.vrLog(
+      `Executing action for: ${this.selectedButton.panel.userData.type}`,
+    );
 
     if (this.selectedButton.panel.userData.onClick) {
       this.selectedButton.panel.userData.onClick();
+      this.vrLog("Action executed!");
+    } else {
+      this.vrLog("ERROR: No onClick function found!");
     }
   }
-
   createCommandMenu() {
     // Define robot commands organized by category
     this.robotCommands = {
