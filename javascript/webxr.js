@@ -35,6 +35,9 @@ class WebXRController {
     this.selectedMenuItem = -1;
     this.menuPage = 0;
     this.menuItemsPerPage = 6;
+    this.menuInitialized = false;
+    this.menuCreated = false;
+    this.lastButtonStates = { menu: false };
 
     // Movement speed multiplier (0.0 to 1.0)
     this.movementSpeed = 0.4; // Reduce speed to 40% of full
@@ -153,8 +156,10 @@ class WebXRController {
     // Setup controllers
     this.setupControllers();
 
-    // Create command menu system
+    // Initialize menu system
     this.createCommandMenu();
+    this.menuInitialized = true;
+    this.menuCreated = true;
 
     // No teleportation needed - user just wants to control robot from VR
   }
@@ -859,11 +864,11 @@ class WebXRController {
     // Update joystick input
     this.updateJoystickMovement();
 
-    // Update menu button input
-    this.updateMenuButtons();
-
-    // Update menu raycasting for selection
-    this.updateMenuRaycasting();
+    // Update menu button input and raycasting if menu is initialized
+    if (this.menuInitialized) {
+      this.updateMenuButtons();
+      this.updateMenuRaycasting();
+    }
 
     // Render the scene
     this.renderer.render(this.scene, this.camera);
