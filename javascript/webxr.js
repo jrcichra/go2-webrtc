@@ -65,7 +65,7 @@ class WebXRController {
       70,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      1000,
     );
 
     // Create renderer
@@ -107,6 +107,32 @@ class WebXRController {
     this.scene.add(this.videoScreen);
 
     console.log("Video screen created");
+
+    // Create hidden video element for WebRTC video stream
+    this.videoElement = document.createElement("video");
+    this.videoElement.id = "video-frame"; // Match what Go2WebRTC expects
+    this.videoElement.style.display = "none";
+    this.videoElement.autoplay = true;
+    this.videoElement.muted = true;
+    document.body.appendChild(this.videoElement);
+
+    // Create video texture and apply to screen material
+    this.setupVideoTexture();
+  }
+
+  setupVideoTexture() {
+    if (this.videoElement) {
+      this.videoTexture = new THREE.VideoTexture(this.videoElement);
+      this.videoTexture.minFilter = THREE.LinearFilter;
+      this.videoTexture.magFilter = THREE.LinearFilter;
+      this.videoTexture.format = THREE.RGBAFormat;
+
+      // Update the video screen material to use the video texture
+      this.videoScreen.material.map = this.videoTexture;
+      this.videoScreen.material.needsUpdate = true;
+
+      console.log("Video texture set up");
+    }
   }
 
   createUIPanels() {
@@ -115,7 +141,7 @@ class WebXRController {
       "DEBUG LOG\n(waiting for events...)",
       -3,
       1.5,
-      -3
+      -3,
     );
     this.debugTextMesh = debugPanel.textMesh;
     this.uiPanels.push(debugPanel.panel);
@@ -125,7 +151,7 @@ class WebXRController {
       `STATUS\nRobot: 10.0.0.207\nConnection: Connecting...\nVersion: v${WEBXR_VERSION}`,
       3,
       1.5,
-      -3
+      -3,
     );
     this.statusTextMesh = statusPanel.textMesh;
     this.uiPanels.push(statusPanel.panel);
@@ -364,8 +390,8 @@ class WebXRController {
 
       this.vrLog(
         `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(
-          1
-        )}`
+          1,
+        )}`,
       );
       this.sendMovement(forward, strafe, turn);
     }
@@ -394,7 +420,7 @@ class WebXRController {
     this.rtc.publishApi(
       "rt/api/sport/request",
       1008, // Move command
-      JSON.stringify({ x: x, y: y, z: z })
+      JSON.stringify({ x: x, y: y, z: z }),
     );
   }
 
@@ -405,7 +431,7 @@ class WebXRController {
       const token = localStorage.getItem("token") || "";
 
       this.updateStatusPanel(
-        `STATUS\nRobot: ${robotIP}\nConnection: Connecting...`
+        `STATUS\nRobot: ${robotIP}\nConnection: Connecting...`,
       );
 
       console.log(`Auto-connecting to robot at ${robotIP}`);
@@ -426,7 +452,7 @@ class WebXRController {
       this.rtc.pc.addEventListener("iceconnectionstatechange", () => {
         this.vrLog(`ICE State: ${this.rtc.pc.iceConnectionState}`);
         this.updateStatusPanel(
-          `STATUS\nRobot: ${robotIP}\nICE: ${this.rtc.pc.iceConnectionState}`
+          `STATUS\nRobot: ${robotIP}\nICE: ${this.rtc.pc.iceConnectionState}`,
         );
       });
 
@@ -443,7 +469,7 @@ class WebXRController {
         await this.rtc.enableMicrophone();
       } catch (error) {
         console.log(
-          "Microphone access denied, robot may not respond to movement commands"
+          "Microphone access denied, robot may not respond to movement commands",
         );
         this.vrLog("Mic denied - movement may not work");
       }
@@ -467,7 +493,7 @@ class WebXRController {
           if (state === "open") {
             this.vrLog("Channel OPEN! Ready!");
             this.updateStatusPanel(
-              `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`
+              `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`,
             );
             clearInterval(this.channelMonitor);
           } else if (state === "connecting") {
@@ -485,10 +511,10 @@ class WebXRController {
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
       this.updateStatusPanel(
-        `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`
+        `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
       );
       this.updateDebugPanel(
-        "DEBUG INFO\nLeft Stick: Move/Strafe\nRight Stick: Rotate\nConnected: Yes"
+        "DEBUG INFO\nLeft Stick: Move/Strafe\nRight Stick: Rotate\nConnected: Yes",
       );
 
       console.log("Connected to robot in VR mode");
