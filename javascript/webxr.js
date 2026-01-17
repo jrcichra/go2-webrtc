@@ -190,21 +190,26 @@ class WebXRController {
       this.videoTexture.magFilter = THREE.LinearFilter;
       this.videoTexture.format = THREE.RGBAFormat;
 
-      // Don't apply texture yet - keep it red until video is ready
-
       // Add event listeners to debug video state
       this.videoElement.addEventListener("loadedmetadata", () => {
         this.vrLog(
           `Video metadata: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
         );
+
+        // Switch to video texture and remove red tint
+        this.videoScreen.material.map = this.videoTexture;
+        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
+        this.videoScreen.material.needsUpdate = true;
+        this.videoTexture.needsUpdate = true;
+        this.vrLog("Red tint removed!");
       });
 
       this.videoElement.addEventListener("loadeddata", () => {
-        this.vrLog("Video data loaded - switching texture!");
+        this.vrLog("Video data loaded!");
 
         // Switch to video texture as soon as we have data
         this.videoScreen.material.map = this.videoTexture;
-        this.videoScreen.material.color.set(0xffffff); // Remove red tint
+        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
         this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
       });
@@ -212,17 +217,20 @@ class WebXRController {
       this.videoElement.addEventListener("playing", () => {
         this.vrLog("Video PLAYING!");
 
-        // Make sure texture is applied
-        if (!this.videoScreen.material.map) {
-          this.videoScreen.material.map = this.videoTexture;
-          this.videoScreen.material.color.set(0xffffff);
-          this.videoScreen.material.needsUpdate = true;
-        }
+        // Make sure texture is applied and red tint is gone
+        this.videoScreen.material.map = this.videoTexture;
+        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
+        this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
       });
 
       this.videoElement.addEventListener("canplay", () => {
         this.vrLog("Video can play!");
+
+        // One more attempt to remove red tint
+        this.videoScreen.material.map = this.videoTexture;
+        this.videoScreen.material.color.set(0xffffff); // WHITE
+        this.videoScreen.material.needsUpdate = true;
       });
 
       this.videoElement.addEventListener("error", (e) => {
@@ -241,7 +249,6 @@ class WebXRController {
       this.vrLog("Video element ready, waiting for stream...");
     }
   }
-
   createUIPanels() {
     // Create debug info panel with text
     const debugPanel = this.createTextPanel(
