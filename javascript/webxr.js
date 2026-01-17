@@ -36,6 +36,9 @@ class WebXRController {
     this.menuPage = 0;
     this.menuItemsPerPage = 6;
 
+    // Movement speed multiplier (0.0 to 1.0)
+    this.movementSpeed = 0.4; // Reduce speed to 40% of full
+
     this.init();
   }
 
@@ -149,6 +152,9 @@ class WebXRController {
 
     // Setup controllers
     this.setupControllers();
+
+    // Create command menu system
+    this.createCommandMenu();
 
     // No teleportation needed - user just wants to control robot from VR
   }
@@ -532,9 +538,9 @@ class WebXRController {
     // Left Stick X (Inverted): Strafe Left/Right (y)
     // Right Stick X (Inverted): Turn Left/Right (z)
 
-    const forward = -leftStickY; // x
-    const strafe = -leftStickX; // y (Strafe)
-    const turn = -rightStickX; // z (Turn)
+    const forward = -leftStickY * this.movementSpeed; // x
+    const strafe = -leftStickX * this.movementSpeed; // y (Strafe)
+    const turn = -rightStickX * this.movementSpeed; // z (Turn)
 
     // Store previous values to detect changes
     if (!this.prevMovement) {
@@ -852,6 +858,12 @@ class WebXRController {
 
     // Update joystick input
     this.updateJoystickMovement();
+
+    // Update menu button input
+    this.updateMenuButtons();
+
+    // Update menu raycasting for selection
+    this.updateMenuRaycasting();
 
     // Render the scene
     this.renderer.render(this.scene, this.camera);
