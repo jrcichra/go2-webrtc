@@ -522,10 +522,36 @@ class WebXRController {
       };
 
       this.vrLog("Initializing WebRTC...");
-      // CRITICAL: Connect to SIGNALING server at computer IP (10.0.0.43)
-      // but target ROBOT at robot IP (10.0.0.207)
       const signalingServer = "10.0.0.43";
       this.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
+
+      // ADD THIS: Monitor track events directly
+      this.rtc.pc.addEventListener("track", (event) => {
+        this.vrLog(`Track event: ${event.track.kind}`);
+        console.log("Track event received:", event);
+
+        if (event.track.kind === "video") {
+          this.vrLog("Video track received!");
+
+          // Assign the video stream directly
+          if (event.streams && event.streams[0]) {
+            this.vrLog("Assigning video stream to element...");
+            this.videoElement.srcObject = event.streams[0];
+
+            // Try to play it manually
+            this.videoElement
+              .play()
+              .then(() => {
+                this.vrLog("Video play() succeeded!");
+              })
+              .catch((err) => {
+                this.vrLog(`Video play() failed: ${err.message}`);
+              });
+          } else {
+            this.vrLog("No streams in track event!");
+          }
+        }
+      });
 
       // Add ICE state monitoring
       this.rtc.pc.addEventListener("iceconnectionstatechange", () => {
@@ -569,10 +595,14 @@ class WebXRController {
       const monitorChannel = () => {
         if (this.rtc && this.rtc.channel) {
           const state = this.rtc.channel.readyState;
-          // this.vrLog(`Data channel: ${state}`); // Too spammy if logged every 2s
 
           if (state === "open") {
             this.vrLog("Channel OPEN! Ready!");
+
+            // ADD THIS: Manually request video stream when channel is open
+            this.vrLog("Requesting video stream...");
+            this.rtc.publish("", "on", 2); // DataChannelType.VID = 2
+
             this.updateStatusPanel(
               `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`,
             );
@@ -591,10 +621,10 @@ class WebXRController {
       monitorChannel(); // Check immediately
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
-      // ADD THIS: Periodically check video status
+      // Periodically check video status
       this.videoStatusChecker = setInterval(() => {
         this.checkVideoStatus();
-      }, 5000); // Check every 5 seconds
+      }, 5000);
 
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
