@@ -91,10 +91,8 @@ class WebXRController {
     // Initialize Three.js scene
     this.setupScene();
 
-    // Add VR button (like vr-dungeon does)
     document.body.appendChild(VRButton.createButton(this.renderer));
 
-    // Start render loop (like vr-dungeon does)
     this.renderer.setAnimationLoop((timestamp, frame) => {
       this.render(timestamp, frame);
     });
@@ -423,7 +421,6 @@ class WebXRController {
   }
 
   updateJoystickMovement() {
-    // Get WebXR input sources (like vr-dungeon does)
     const session = this.renderer.xr.getSession();
     if (!session) {
       return;
@@ -434,7 +431,6 @@ class WebXRController {
     let rightStickX = 0;
     let inputSourceCount = 0;
 
-    // Process input sources exactly like vr-dungeon
     for (const source of session.inputSources) {
       inputSourceCount++;
       if (source.gamepad) {
