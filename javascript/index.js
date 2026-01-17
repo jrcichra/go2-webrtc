@@ -140,7 +140,7 @@ function joystickTick(joyLeft, joyRight) {
   globalThis.rtc.publishApi(
     "rt/api/sport/request",
     1008,
-    JSON.stringify({ x: x, y: y, z: z })
+    JSON.stringify({ x: x, y: y, z: z }),
   );
 }
 
@@ -259,7 +259,7 @@ function sendMovement() {
     globalThis.rtc.publishApi(
       "rt/api/sport/request",
       1008,
-      JSON.stringify(movement)
+      JSON.stringify(movement),
     );
   }
 }

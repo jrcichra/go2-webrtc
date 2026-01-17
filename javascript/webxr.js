@@ -519,14 +519,14 @@ class WebXRController {
       }
     }
 
-    // Map VR joysticks to robot movement (Matching index.js "Arcade" style)
+    // Map VR joysticks to robot movement (Swapped controls)
     // Left Stick Y (Inverted): Forward/Backward (x)
-    // Left Stick X (Inverted): Turn Left/Right (z)
-    // Right Stick X (Inverted): Strafe Left/Right (y)
+    // Left Stick X (Inverted): Strafe Left/Right (y)
+    // Right Stick X (Inverted): Turn Left/Right (z)
 
     const forward = -leftStickY; // x
-    const turn = -leftStickX; // z (Turn)
-    const strafe = -rightStickX; // y (Strafe)
+    const strafe = -leftStickX; // y (Strafe)
+    const turn = -rightStickX; // z (Turn)
 
     // Store previous values to detect changes
     if (!this.prevMovement) {
@@ -787,7 +787,7 @@ class WebXRController {
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
       );
       this.updateDebugPanel(
-        "DEBUG INFO\nLeft Stick: Move/Strafe\nRight Stick: Rotate\nConnected: Yes",
+        "DEBUG INFO\nLeft Stick: Strafe/Move\nRight Stick: Turn\nConnected: Yes",
       );
 
       console.log("Connected to robot in VR mode");
