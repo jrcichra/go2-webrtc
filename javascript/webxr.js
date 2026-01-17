@@ -131,6 +131,12 @@ class WebXRController {
       this.videoScreen.material.map = this.videoTexture;
       this.videoScreen.material.needsUpdate = true;
 
+      // ADD THIS: Listen for when video actually starts playing
+      this.videoElement.addEventListener("playing", () => {
+        this.vrLog("Video stream active!");
+        this.videoTexture.needsUpdate = true;
+      });
+
       console.log("Video texture set up");
     }
   }
@@ -464,9 +470,10 @@ class WebXRController {
         this.vrLog(`Signaling: ${this.rtc.pc.signalingState}`);
       });
 
-      // Enable microphone (required for robot movement)
+      // CRITICAL: Enable microphone BEFORE initSDP so it's included in the offer
       try {
         await this.rtc.enableMicrophone();
+        this.vrLog("Microphone enabled");
       } catch (error) {
         console.log(
           "Microphone access denied, robot may not respond to movement commands",
@@ -474,6 +481,7 @@ class WebXRController {
         this.vrLog("Mic denied - movement may not work");
       }
 
+      // NOW create the SDP offer with the microphone track included
       try {
         await this.rtc.initSDP();
         this.isConnected = true;
@@ -541,6 +549,11 @@ class WebXRController {
     // Switch back to dark background when exiting VR
     if (!this.renderer.xr.isPresenting && this.scene.background === null) {
       this.scene.background = new THREE.Color(0x1f1f1f);
+    }
+
+    //  Update video texture every frame when video is playing
+    if (this.videoTexture && this.videoElement && !this.videoElement.paused) {
+      this.videoTexture.needsUpdate = true;
     }
 
     // Update joystick input
