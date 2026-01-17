@@ -377,16 +377,20 @@ class WebXRController {
         this.videoElement &&
         this.videoElement.srcObject
       ) {
-        this.vrLog("Trigger pressed - attempting video play...");
+        this.vrLog("Trigger: trying video play...");
         this.videoElement
           .play()
           .then(() => {
-            this.vrLog("Video started via trigger!");
+            this.vrLog("Video STARTED!");
             this.pendingVideoStream = false;
           })
           .catch((err) => {
-            this.vrLog(`Still failed: ${err.name}`);
+            this.vrLog(`Play failed: ${err.name}`);
           });
+      } else if (!this.videoElement.srcObject) {
+        this.vrLog("No video stream yet");
+      } else if (!this.pendingVideoStream && this.videoElement.srcObject) {
+        this.vrLog("Video already playing");
       }
     });
 
@@ -596,12 +600,23 @@ class WebXRController {
         }
       });
 
-      // Add ICE state monitoring
+      // Add ICE state monitoring with more detail
       this.rtc.pc.addEventListener("iceconnectionstatechange", () => {
-        this.vrLog(`ICE State: ${this.rtc.pc.iceConnectionState}`);
-        this.updateStatusPanel(
-          `STATUS\nRobot: ${robotIP}\nICE: ${this.rtc.pc.iceConnectionState}`,
-        );
+        const state = this.rtc.pc.iceConnectionState;
+        this.vrLog(`ICE State: ${state}`);
+        console.log("ICE connection state changed:", state);
+
+        if (state === "disconnected") {
+          this.vrLog("ICE DISCONNECTED! Checking...");
+        } else if (state === "failed") {
+          this.vrLog("ICE FAILED! Connection lost!");
+        } else if (state === "connected") {
+          this.vrLog("ICE CONNECTED!");
+        } else if (state === "completed") {
+          this.vrLog("ICE COMPLETED!");
+        }
+
+        this.updateStatusPanel(`STATUS\nRobot: ${robotIP}\nICE: ${state}`);
       });
 
       this.rtc.pc.addEventListener("icegatheringstatechange", () => {
@@ -610,6 +625,10 @@ class WebXRController {
 
       this.rtc.pc.addEventListener("signalingstatechange", () => {
         this.vrLog(`Signaling: ${this.rtc.pc.signalingState}`);
+      });
+
+      this.rtc.pc.addEventListener("connectionstatechange", () => {
+        this.vrLog(`Connection: ${this.rtc.pc.connectionState}`);
       });
 
       // CRITICAL: Enable microphone BEFORE initSDP so it's included in the offer
@@ -640,11 +659,20 @@ class WebXRController {
           const state = this.rtc.channel.readyState;
 
           if (state === "open") {
-            this.vrLog("Channel OPEN! Ready!");
+            if (!this.channelOpenLogged) {
+              this.vrLog("Channel OPEN! Ready!");
+              this.channelOpenLogged = true;
 
-            // Manually request video stream when channel is open
-            this.vrLog("Requesting video stream...");
-            this.rtc.publish("", "on", 2); // DataChannelType.VID = 2
+              // Wait a bit before requesting video to let connection stabilize
+              setTimeout(() => {
+                this.vrLog("Requesting video stream...");
+                try {
+                  this.rtc.publish("", "on", 2); // DataChannelType.VID = 2
+                } catch (err) {
+                  this.vrLog(`Video request error: ${err.message}`);
+                }
+              }, 2000);
+            }
 
             this.updateStatusPanel(
               `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`,
@@ -667,7 +695,7 @@ class WebXRController {
       // Periodically check video status
       this.videoStatusChecker = setInterval(() => {
         this.checkVideoStatus();
-      }, 5000);
+      }, 10000); // Less frequent to reduce spam
 
       this.updateStatusPanel(
         `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
