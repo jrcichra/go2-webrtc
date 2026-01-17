@@ -195,24 +195,34 @@ class WebXRController {
       // Add event listeners to debug video state
       this.videoElement.addEventListener("loadedmetadata", () => {
         this.vrLog(
-          `Video metadata loaded: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
+          `Video metadata: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
         );
       });
 
       this.videoElement.addEventListener("loadeddata", () => {
-        this.vrLog("Video data loaded");
-      });
+        this.vrLog("Video data loaded - switching texture!");
 
-      this.videoElement.addEventListener("playing", () => {
-        this.vrLog("Video stream PLAYING! Switching to video texture...");
-
-        // NOW switch from red to video texture
+        // Switch to video texture as soon as we have data
         this.videoScreen.material.map = this.videoTexture;
         this.videoScreen.material.color.set(0xffffff); // Remove red tint
         this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
+      });
 
-        this.vrLog("Video texture applied to screen!");
+      this.videoElement.addEventListener("playing", () => {
+        this.vrLog("Video PLAYING!");
+
+        // Make sure texture is applied
+        if (!this.videoScreen.material.map) {
+          this.videoScreen.material.map = this.videoTexture;
+          this.videoScreen.material.color.set(0xffffff);
+          this.videoScreen.material.needsUpdate = true;
+        }
+        this.videoTexture.needsUpdate = true;
+      });
+
+      this.videoElement.addEventListener("canplay", () => {
+        this.vrLog("Video can play!");
       });
 
       this.videoElement.addEventListener("error", (e) => {
@@ -731,21 +741,27 @@ class WebXRController {
     }
 
     // Update video texture every frame when video is playing
-    if (this.videoTexture && this.videoElement) {
-      if (
-        !this.videoElement.paused &&
-        !this.videoElement.ended &&
-        this.videoElement.readyState >= 2
-      ) {
-        this.videoTexture.needsUpdate = true;
+    if (this.videoTexture && this.videoElement && this.videoElement.srcObject) {
+      try {
+        if (
+          this.videoElement.readyState >= this.videoElement.HAVE_CURRENT_DATA
+        ) {
+          this.videoTexture.needsUpdate = true;
 
-        // Debug log occasionally (every 120 frames)
-        if (!this.videoUpdateCounter) this.videoUpdateCounter = 0;
-        this.videoUpdateCounter++;
-        if (this.videoUpdateCounter % 120 === 0) {
-          this.vrLog(
-            `Video updating: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
-          );
+          // Debug log occasionally (every 120 frames)
+          if (!this.videoUpdateCounter) this.videoUpdateCounter = 0;
+          this.videoUpdateCounter++;
+          if (this.videoUpdateCounter % 120 === 0) {
+            this.vrLog(
+              `Video updating: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`,
+            );
+          }
+        }
+      } catch (err) {
+        // Silently ignore texture update errors
+        if (!this.videoErrorLogged) {
+          this.vrLog(`Video texture error: ${err.message}`);
+          this.videoErrorLogged = true;
         }
       }
     }
