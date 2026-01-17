@@ -384,8 +384,11 @@ class WebXRController {
   onControllerConnected(event, index) {
     console.log(`Controller ${index} connected:`, event.data);
 
-    // Get controller target and grip
     const controller = this.controllers[index];
+
+    // CRITICAL: Store gamepad reference from event
+    controller.gamepad = event.data.gamepad;
+
     const controllerGrip = this.renderer.xr.getControllerGrip(index);
 
     // Load dynamic controller models that show button states
@@ -405,10 +408,16 @@ class WebXRController {
 
     // Setup joystick input handling
     this.setupJoystickInput(index);
+
+    this.vrLog(`Controller ${index} gamepad stored`);
   }
 
   onControllerDisconnected(event, index) {
     console.log(`Controller ${index} disconnected`);
+    const controller = this.controllers[index];
+    if (controller) {
+      controller.gamepad = null;
+    }
   }
 
   setupJoystickInput(controllerIndex) {
@@ -1012,14 +1021,13 @@ class WebXRController {
   updateMenuButtons() {
     if (!this.renderer.xr.isPresenting) return;
 
-    const session = this.renderer.xr.getSession();
-    if (!session) return;
+    // Check both controllers directly
+    for (let i = 0; i < this.controllers.length; i++) {
+      const controller = this.controllers[i];
+      if (!controller || !controller.gamepad) continue;
 
-    for (const source of session.inputSources) {
-      if (!source.gamepad) continue;
-
-      const gamepad = source.gamepad;
-      const handedness = source.handedness;
+      const gamepad = controller.gamepad;
+      const handedness = i === 0 ? "left" : "right"; // 0=left, 1=right
 
       // Button 4 = Y/B button on Quest controllers
       const menuButton = gamepad.buttons[4];
