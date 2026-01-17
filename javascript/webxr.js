@@ -179,6 +179,15 @@ class WebXRController {
     this.videoElement.playsInline = true; // Important for mobile/VR
     document.body.appendChild(this.videoElement);
 
+    // Create hidden audio element for WebRTC audio stream (what the dog hears)
+    this.audioElement = document.createElement("audio");
+    this.audioElement.id = "audio-frame"; // Match what Go2WebRTC expects
+    this.audioElement.style.display = "none";
+    this.audioElement.autoplay = true;
+    this.audioElement.muted = false; // NOT muted - we want to hear the audio!
+    this.audioElement.volume = 1.0; // Full volume
+    document.body.appendChild(this.audioElement);
+
     // Create video texture and apply to screen material
     this.setupVideoTexture();
   }
@@ -601,6 +610,45 @@ class WebXRController {
               if (event.streams && event.streams[0]) {
                 this.videoElement.srcObject = event.streams[0];
                 this.pendingVideoStream = true;
+              }
+            }
+          }, 100);
+        } else if (event.track.kind === "audio") {
+          this.vrLog("Audio track received! (What the dog hears)");
+          console.log("Audio track details:", event.track);
+          console.log("Audio streams:", event.streams);
+
+          // The go2webrtc.js should handle assigning srcObject to audio element
+          // But we'll monitor to see if it happens
+          setTimeout(() => {
+            if (this.audioElement.srcObject) {
+              this.vrLog("Audio srcObject assigned by go2webrtc!");
+              // Try to play the audio
+              this.audioElement
+                .play()
+                .then(() => {
+                  this.vrLog(
+                    "Audio playing! You should hear what the dog hears.",
+                  );
+                })
+                .catch((err) => {
+                  this.vrLog(`Audio play failed: ${err.message}`);
+                });
+            } else {
+              this.vrLog("No audio srcObject - assigning manually...");
+              if (event.streams && event.streams[0]) {
+                this.audioElement.srcObject = event.streams[0];
+                // Try to play the audio
+                this.audioElement
+                  .play()
+                  .then(() => {
+                    this.vrLog(
+                      "Audio playing! You should hear what the dog hears.",
+                    );
+                  })
+                  .catch((err) => {
+                    this.vrLog(`Audio play failed: ${err.message}`);
+                  });
               }
             }
           }, 100);
