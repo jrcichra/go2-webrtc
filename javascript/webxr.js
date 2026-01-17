@@ -426,7 +426,6 @@ class WebXRController {
     // Get WebXR input sources (like vr-dungeon does)
     const session = this.renderer.xr.getSession();
     if (!session) {
-      this.vrLog("Joystick: No session");
       return;
     }
 
@@ -484,59 +483,54 @@ class WebXRController {
       }
     }
 
-    // DEBUG: Log raw values for first controller occasionally
-    if (!this.axisLogCounter) this.axisLogCounter = 0;
-    this.axisLogCounter++;
-    if (
-      this.axisLogCounter % 120 === 0 &&
-      session.inputSources[0] &&
-      session.inputSources[0].gamepad
-    ) {
-      const gp = session.inputSources[0].gamepad;
-      // Log all axes to see which ones move
-      const axesStr = gp.axes.map((a) => a.toFixed(2)).join(",");
-      this.updateDebugPanel(`Axes Debug:\n[${axesStr}]`);
+    // Map VR joysticks to robot movement (Matching index.js "Arcade" style)
+    // Left Stick Y (Inverted): Forward/Backward (x)
+    // Left Stick X (Inverted): Turn Left/Right (z)
+    // Right Stick X (Inverted): Strafe Left/Right (y)
+
+    const forward = -leftStickY; // x
+    const turn = -leftStickX; // z (Turn)
+    const strafe = -rightStickX; // y (Strafe)
+
+    // Store previous values to detect changes
+    if (!this.prevMovement) {
+      this.prevMovement = { forward: 0, strafe: 0, turn: 0 };
     }
 
-    // Log controller status periodically (every 60 frames)
-    if (!this.joystickLogCounter) this.joystickLogCounter = 0;
-    this.joystickLogCounter++;
-    if (this.joystickLogCounter % 60 === 0) {
-      this.vrLog(`Controllers: ${inputSourceCount} detected`);
-      if (inputSourceCount === 0) {
-        this.vrLog("WARNING: No controllers!");
-      }
-    }
+    // Check if there's any significant input OR if we need to send a stop command
+    const hasInput =
+      Math.abs(forward) > 0.01 ||
+      Math.abs(strafe) > 0.01 ||
+      Math.abs(turn) > 0.01;
+    const hadInput =
+      Math.abs(this.prevMovement.forward) > 0.01 ||
+      Math.abs(this.prevMovement.strafe) > 0.01 ||
+      Math.abs(this.prevMovement.turn) > 0.01;
 
-    // Only log movement if there's significant input
-    if (
-      Math.abs(leftStickX) > 0.1 ||
-      Math.abs(leftStickY) > 0.1 ||
-      Math.abs(rightStickX) > 0.1
-    ) {
-      // RATE LIMITING: Only log every 100ms to avoid spam
+    // Send command if:
+    // 1. There's input now, OR
+    // 2. There was input before but not now (send stop command)
+    if (hasInput || hadInput) {
+      // RATE LIMITING: Only send every 100ms to avoid spam
       const now = Date.now();
       if (now - this.lastMovementTime < 100) {
         return;
       }
       this.lastMovementTime = now;
 
-      // Map VR joysticks to robot movement (Matching index.js "Arcade" style)
-      // Left Stick Y (Inverted): Forward/Backward (x)
-      // Left Stick X (Inverted): Turn Left/Right (z)
-      // Right Stick X (Inverted): Strafe Left/Right (y)
+      // Log if there's actual movement or if we're stopping
+      if (hasInput) {
+        this.vrLog(
+          `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(1)}`,
+        );
+      } else if (hadInput && !hasInput) {
+        this.vrLog("STOP");
+      }
 
-      // Match desktop scaling (no extra scaling)
-      const forward = -leftStickY; // x
-      const turn = -leftStickX; // z (Turn)
-      const strafe = -rightStickX; // y (Strafe)
-
-      this.vrLog(
-        `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(
-          1,
-        )}`,
-      );
       this.sendMovement(forward, strafe, turn);
+
+      // Store current values
+      this.prevMovement = { forward, strafe, turn };
     }
   }
 
