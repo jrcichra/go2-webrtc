@@ -234,6 +234,7 @@ class WebXRController {
     // Create a group to hold screen + frame
     this.videoScreenGroup = new THREE.Group();
     this.videoScreenGroup.position.set(0, 2, -5);
+    this.videoScreenGroup.scale.setScalar(0.6); // Start at 60% size
     this.scene.add(this.videoScreenGroup);
 
     // Main screen with slightly inset position
@@ -932,8 +933,11 @@ class WebXRController {
       raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
       raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-      // Check what we're hitting
+      // Check what we're hitting - include menu if visible
       const interactableObjects = [this.videoScreenGroup, ...this.uiPanels];
+      if (this.menuVisible && this.menuGroup) {
+        interactableObjects.push(this.menuGroup);
+      }
       if (this.menuVisible && this.categoryButtons) {
         this.categoryButtons.forEach((b) => interactableObjects.push(b.panel));
       }
@@ -941,7 +945,7 @@ class WebXRController {
         this.commandButtons.forEach((b) => interactableObjects.push(b.panel));
       }
 
-      const intersects = raycaster.intersectObjects(interactableObjects, false);
+      const intersects = raycaster.intersectObjects(interactableObjects, true); // true = check children!
 
       // Update laser appearance based on what we hit
       if (intersects.length > 0) {
@@ -1213,14 +1217,20 @@ class WebXRController {
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-    // Check all manipulable objects - use videoScreenGroup instead of videoScreen
+    // Check all manipulable objects - include menuGroup
     const manipulableObjects = [this.videoScreenGroup, ...this.uiPanels];
-    const intersects = raycaster.intersectObjects(manipulableObjects, true); // true = check children
+
+    // Add menu if it's visible
+    if (this.menuVisible && this.menuGroup) {
+      manipulableObjects.push(this.menuGroup);
+    }
+
+    const intersects = raycaster.intersectObjects(manipulableObjects, true);
 
     return intersects.length > 0
       ? intersects[0].object.parent === this.videoScreenGroup
         ? this.videoScreenGroup
-        : intersects[0].object
+        : intersects[0].object.parent || intersects[0].object
       : null;
   }
 
@@ -1722,6 +1732,7 @@ class WebXRController {
   createMenuBackground() {
     this.menuGroup = new THREE.Group();
     this.menuGroup.position.set(0, 1.5, -2);
+    this.menuGroup.scale.setScalar(0.5); // Start at half size
 
     const bgGeometry = new THREE.PlaneGeometry(2.5, 2);
     const bgMaterial = new THREE.MeshBasicMaterial({
