@@ -46,7 +46,7 @@ class WebXRController {
     };
 
     // Movement speed multiplier (0.0 to 1.0)
-    this.movementSpeed = 0.4;
+    this.movementSpeed = 0.8;
 
     // Video screen adjustment properties
     this.screenScale = 1.0;
@@ -1155,6 +1155,26 @@ class WebXRController {
     this.lastButtonStates.rightMenu = menuPressed;
   }
 
+  getPointedObject(controllerSource) {
+    const raycaster = new THREE.Raycaster();
+    const tempMatrix = new THREE.Matrix4();
+
+    const controllerIndex = controllerSource.handedness === "left" ? 0 : 1;
+    const controller = this.controllers[controllerIndex];
+    if (!controller) return null;
+
+    // Set up raycaster
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+    // Check all manipulable objects
+    const manipulableObjects = [this.videoScreen, ...this.uiPanels];
+    const intersects = raycaster.intersectObjects(manipulableObjects, false);
+
+    return intersects.length > 0 ? intersects[0].object : null;
+  }
+
   updateScreenManipulation() {
     if (!this.renderer.xr.isPresenting || !this.videoScreen) return;
 
@@ -1178,20 +1198,22 @@ class WebXRController {
     // TWO-HANDED MANIPULATION (both grips + pointing at screen)
     if (leftGrip && rightGrip) {
       if (!this.twoHandedManipulation) {
-        // Check if both controllers are pointing at screen
-        const leftPointing = this.isControllerPointingAtScreen(leftSource);
-        const rightPointing = this.isControllerPointingAtScreen(rightSource);
+        // Check if pointing at any manipulable object
+        const leftObject = this.getPointedObject(leftSource);
+        const rightObject = this.getPointedObject(rightSource);
+        const targetObject = leftObject || rightObject;
 
-        if (leftPointing || rightPointing) {
+        if (targetObject) {
           this.twoHandedManipulation = true;
           this.manipulationStartData = {
+            targetObject: targetObject, // Store which object we're manipulating
             leftPos: this.getControllerWorldPosition(leftSource),
             rightPos: this.getControllerWorldPosition(rightSource),
             initialDistance: this.getControllerWorldPosition(
               leftSource,
             ).distanceTo(this.getControllerWorldPosition(rightSource)),
-            initialScale: this.screenScale,
-            initialScreenPos: this.videoScreen.position.clone(),
+            initialScale: targetObject.scale.x, // Use object's current scale
+            initialObjectPos: targetObject.position.clone(),
           };
           this.vrLog("Two-handed manipulation started");
         }
@@ -1216,19 +1238,20 @@ class WebXRController {
           : null;
 
       if (activeSource && !this.oneHandedManipulation) {
-        // Check if pointing at screen
-        if (this.isControllerPointingAtScreen(activeSource)) {
+        // Check if pointing at screen OR UI panels
+        const pointingAtObject = this.getPointedObject(activeSource);
+        if (pointingAtObject) {
           this.oneHandedManipulation = true;
           this.manipulatingHand = activeSource.handedness;
           this.manipulationStartData = {
             controllerPos: this.getControllerWorldPosition(activeSource),
-            screenPos: this.videoScreen.position.clone(),
-            controllerToScreen: this.videoScreen.position
+            targetObject: pointingAtObject, // Store the object we're manipulating
+            controllerToObject: pointingAtObject.position
               .clone()
               .sub(this.getControllerWorldPosition(activeSource)),
           };
           this.vrLog(
-            `One-handed manipulation started (${this.manipulatingHand})`,
+            `One-handed manipulation started (${this.manipulatingHand}) on ${pointingAtObject.name || "object"}`,
           );
         }
       } else if (!activeSource && this.oneHandedManipulation) {
@@ -1250,19 +1273,22 @@ class WebXRController {
 
     if (!leftPos || !rightPos || !this.manipulationStartData) return;
 
+    const targetObject = this.manipulationStartData.targetObject;
+    if (!targetObject) return;
+
     // Calculate current distance between controllers
     const currentDistance = leftPos.distanceTo(rightPos);
 
-    // Calculate scale based on distance change (pinch to scale)
+    // Calculate scale based on distance change
     const distanceRatio =
       currentDistance / this.manipulationStartData.initialDistance;
     const newScale = this.manipulationStartData.initialScale * distanceRatio;
 
     // Clamp scale
-    this.screenScale = Math.max(0.3, Math.min(5.0, newScale));
-    this.videoScreen.scale.setScalar(this.screenScale);
+    const clampedScale = Math.max(0.3, Math.min(5.0, newScale));
+    targetObject.scale.setScalar(clampedScale);
 
-    // Calculate midpoint between controllers for position
+    // Calculate midpoint for position
     const midpoint = new THREE.Vector3()
       .addVectors(leftPos, rightPos)
       .multiplyScalar(0.5);
@@ -1274,49 +1300,55 @@ class WebXRController {
       )
       .multiplyScalar(0.5);
 
-    // Move screen based on midpoint movement
+    // Move object based on midpoint movement
     const midpointDelta = midpoint.clone().sub(startMidpoint);
-    const newScreenPos = this.manipulationStartData.initialScreenPos
+    const newObjectPos = this.manipulationStartData.initialObjectPos
       .clone()
       .add(midpointDelta);
 
     // Apply position with bounds
-    this.videoScreen.position.set(
-      Math.max(-10, Math.min(10, newScreenPos.x)),
-      Math.max(-5, Math.min(10, newScreenPos.y)),
-      Math.max(-15, Math.min(-1, newScreenPos.z)),
+    targetObject.position.set(
+      Math.max(-10, Math.min(10, newObjectPos.x)),
+      Math.max(-5, Math.min(10, newObjectPos.y)),
+      Math.max(-15, Math.min(-1, newObjectPos.z)),
     );
 
     // Update start data for continuous manipulation
     this.manipulationStartData.leftPos = leftPos;
     this.manipulationStartData.rightPos = rightPos;
     this.manipulationStartData.initialDistance = currentDistance;
-    this.manipulationStartData.initialScale = this.screenScale;
-    this.manipulationStartData.initialScreenPos =
-      this.videoScreen.position.clone();
+    this.manipulationStartData.initialScale = clampedScale;
+    this.manipulationStartData.initialObjectPos = targetObject.position.clone();
   }
 
   updateOneHandedManipulation(controllerSource) {
     const currentPos = this.getControllerWorldPosition(controllerSource);
     if (!currentPos || !this.manipulationStartData) return;
 
-    // Move screen to maintain offset from controller
-    const newScreenPos = currentPos
+    const targetObject = this.manipulationStartData.targetObject;
+    if (!targetObject) return;
+
+    // DIRECT TRACKING - object follows controller movement 1:1
+    // Calculate how much the controller moved since last frame
+    const movement = currentPos
       .clone()
-      .add(this.manipulationStartData.controllerToScreen);
+      .sub(this.manipulationStartData.controllerPos);
+
+    // Apply movement directly to object (with multiplier for faster movement)
+    const speedMultiplier = 1.5; // Increase this to make it even faster (try 2.0 or 3.0)
+    const newObjectPos = targetObject.position
+      .clone()
+      .add(movement.multiplyScalar(speedMultiplier));
 
     // Apply position with bounds
-    this.videoScreen.position.set(
-      Math.max(-10, Math.min(10, newScreenPos.x)),
-      Math.max(-5, Math.min(10, newScreenPos.y)),
-      Math.max(-15, Math.min(-1, newScreenPos.z)),
+    targetObject.position.set(
+      Math.max(-10, Math.min(10, newObjectPos.x)),
+      Math.max(-5, Math.min(10, newObjectPos.y)),
+      Math.max(-15, Math.min(-1, newObjectPos.z)),
     );
 
-    // Update for continuous movement
-    this.manipulationStartData.controllerPos = currentPos;
-    this.manipulationStartData.controllerToScreen = this.videoScreen.position
-      .clone()
-      .sub(currentPos);
+    // Update controller position for next frame
+    this.manipulationStartData.controllerPos = currentPos.clone();
   }
 
   isControllerPointingAtScreen(controllerSource) {
