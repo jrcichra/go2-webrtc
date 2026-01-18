@@ -1192,7 +1192,7 @@ class WebXRController {
 
     const gamepad = rightController.gamepad;
 
-    const menuButton = gamepad.buttons[5];
+    const menuButton = gamepad.buttons[4];
     const menuPressed = menuButton && menuButton.pressed;
 
     if (menuPressed && !this.lastButtonStates.rightMenu) {
@@ -1517,12 +1517,29 @@ class WebXRController {
   showMenu() {
     this.menuVisible = true;
 
+    // Position menu where user is looking
     if (this.menuGroup) {
-      this.menuGroup.visible = true;
-    }
+      // Get camera position and direction
+      const cameraPos = new THREE.Vector3();
+      const cameraDir = new THREE.Vector3();
+      this.camera.getWorldPosition(cameraPos);
+      this.camera.getWorldDirection(cameraDir);
 
-    if (this.laserPointer) {
-      this.laserPointer.visible = true;
+      // Place menu 2 meters in front of where user is looking
+      const menuDistance = 2.0;
+      this.menuGroup.position
+        .copy(cameraPos)
+        .add(cameraDir.multiplyScalar(menuDistance));
+
+      // Make menu face the user
+      const direction = new THREE.Vector3().subVectors(
+        cameraPos,
+        this.menuGroup.position,
+      );
+      const angle = Math.atan2(direction.x, direction.z);
+      this.menuGroup.rotation.y = angle;
+
+      this.menuGroup.visible = true;
     }
 
     this.hideCommandButtons();
