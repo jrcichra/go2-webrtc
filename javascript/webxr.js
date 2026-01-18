@@ -1314,21 +1314,15 @@ class WebXRController {
       Math.max(-15, Math.min(-1, newObjectPos.z)),
     );
 
-    // ROTATION - calculate angle between controllers
-    const currentVector = new THREE.Vector3().subVectors(rightPos, leftPos);
-    const startVector = new THREE.Vector3().subVectors(
-      this.manipulationStartData.rightPos,
-      this.manipulationStartData.leftPos,
+    // AUTO-ROTATE TO FACE USER while moving
+    const cameraPos = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPos);
+    const direction = new THREE.Vector3().subVectors(
+      cameraPos,
+      targetObject.position,
     );
-
-    // Calculate rotation angle in the XZ plane (horizontal rotation)
-    const currentAngle = Math.atan2(currentVector.z, currentVector.x);
-    const startAngle = Math.atan2(startVector.z, startVector.x);
-    const rotationDelta = currentAngle - startAngle;
-
-    // Apply rotation
-    targetObject.rotation.y =
-      (this.manipulationStartData.initialRotation || 0) + rotationDelta;
+    const angle = Math.atan2(direction.x, direction.z);
+    targetObject.rotation.y = angle;
 
     // Update start data for continuous manipulation
     this.manipulationStartData.leftPos = leftPos;
@@ -1346,13 +1340,12 @@ class WebXRController {
     if (!targetObject) return;
 
     // DIRECT TRACKING - object follows controller movement 1:1
-    // Calculate how much the controller moved since last frame
     const movement = currentPos
       .clone()
       .sub(this.manipulationStartData.controllerPos);
 
     // Apply movement directly to object with HIGH multiplier for VR scale
-    const speedMultiplier = 10.0; // VR movements are tiny, need big multiplier!
+    const speedMultiplier = 10.0;
     const newObjectPos = targetObject.position
       .clone()
       .add(movement.multiplyScalar(speedMultiplier));
@@ -1363,6 +1356,16 @@ class WebXRController {
       Math.max(-5, Math.min(10, newObjectPos.y)),
       Math.max(-15, Math.min(-1, newObjectPos.z)),
     );
+
+    // AUTO-ROTATE TO FACE USER while moving
+    const cameraPos = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPos);
+    const direction = new THREE.Vector3().subVectors(
+      cameraPos,
+      targetObject.position,
+    );
+    const angle = Math.atan2(direction.x, direction.z);
+    targetObject.rotation.y = angle;
 
     // Update controller position for next frame
     this.manipulationStartData.controllerPos = currentPos.clone();
