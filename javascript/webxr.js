@@ -231,22 +231,92 @@ class WebXRController {
   }
 
   createVideoScreen() {
-    // Create a large virtual screen for video feed (like a big TV in VR)
-    const screenGeometry = new THREE.PlaneGeometry(8, 4.5); // 16:9 aspect ratio
-    const screenMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000, // Start with RED so we can see it
-      side: THREE.DoubleSide, // Visible from both sides
+    // Create a group to hold screen + frame + effects
+    this.videoScreenGroup = new THREE.Group();
+    this.videoScreenGroup.position.set(0, 2, -5);
+    this.scene.add(this.videoScreenGroup);
+
+    // Main screen with slightly inset position
+    const screenGeometry = new THREE.PlaneGeometry(8, 4.5);
+    const screenMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff0000,
+      side: THREE.DoubleSide,
+      emissive: 0x222222, // Slight self-illumination
+      emissiveIntensity: 0.2,
     });
     this.videoScreen = new THREE.Mesh(screenGeometry, screenMaterial);
-    this.videoScreen.position.set(0, 2, -5); // Position in front of user
-    this.scene.add(this.videoScreen);
+    this.videoScreen.position.z = 0.05; // Slightly forward from frame
+    this.videoScreenGroup.add(this.videoScreen);
 
-    console.log("Video screen created at position:", this.videoScreen.position);
-    this.vrLog(
-      `Screen at: ${this.videoScreen.position.x}, ${this.videoScreen.position.y}, ${this.videoScreen.position.z}`,
+    // Thick border/frame around screen
+    const frameThickness = 0.15;
+    const frameDepth = 0.1;
+    const frameColor = 0x1a1a1a;
+
+    // Top frame
+    const topFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(8.3, frameThickness, frameDepth),
+      new THREE.MeshStandardMaterial({
+        color: frameColor,
+        metalness: 0.6,
+        roughness: 0.4,
+      }),
     );
+    topFrame.position.set(0, 2.325, 0);
+    this.videoScreenGroup.add(topFrame);
 
-    // Add a wireframe box around the screen to make it easier to locate
+    // Bottom frame
+    const bottomFrame = topFrame.clone();
+    bottomFrame.position.set(0, -2.325, 0);
+    this.videoScreenGroup.add(bottomFrame);
+
+    // Left frame
+    const leftFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(frameThickness, 4.5, frameDepth),
+      new THREE.MeshStandardMaterial({
+        color: frameColor,
+        metalness: 0.6,
+        roughness: 0.4,
+      }),
+    );
+    leftFrame.position.set(-4.075, 0, 0);
+    this.videoScreenGroup.add(leftFrame);
+
+    // Right frame
+    const rightFrame = leftFrame.clone();
+    rightFrame.position.set(4.075, 0, 0);
+    this.videoScreenGroup.add(rightFrame);
+
+    // Back panel (gives depth)
+    const backPanel = new THREE.Mesh(
+      new THREE.BoxGeometry(8.3, 4.8, 0.05),
+      new THREE.MeshStandardMaterial({
+        color: 0x0a0a0a,
+        metalness: 0.3,
+        roughness: 0.7,
+      }),
+    );
+    backPanel.position.z = -0.05;
+    this.videoScreenGroup.add(backPanel);
+
+    // Ambient glow behind screen
+    const glowGeometry = new THREE.PlaneGeometry(8.5, 5);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x4488ff,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.BackSide,
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.z = -0.1;
+    this.videoScreenGroup.add(glow);
+
+    // Add subtle point light in front of screen
+    const screenLight = new THREE.PointLight(0xffffff, 0.5, 10);
+    screenLight.position.set(0, 0, 0.5);
+    this.videoScreenGroup.add(screenLight);
+
+    // Wireframe for debugging (green outline)
     const wireframeGeometry = new THREE.EdgesGeometry(screenGeometry);
     const wireframeMaterial = new THREE.LineBasicMaterial({
       color: 0x00ff00,
@@ -256,9 +326,18 @@ class WebXRController {
       wireframeGeometry,
       wireframeMaterial,
     );
-    this.videoScreen.add(wireframe);
+    wireframe.position.z = 0.06; // In front of screen
+    this.videoScreenGroup.add(wireframe);
 
-    // Create hidden video element for WebRTC video stream
+    console.log(
+      "Video screen created at position:",
+      this.videoScreenGroup.position,
+    );
+    this.vrLog(
+      `Screen at: ${this.videoScreenGroup.position.x}, ${this.videoScreenGroup.position.y}, ${this.videoScreenGroup.position.z}`,
+    );
+
+    // Create hidden video element
     this.videoElement = document.createElement("video");
     this.videoElement.id = "video-frame";
     this.videoElement.style.display = "none";
@@ -267,7 +346,7 @@ class WebXRController {
     this.videoElement.playsInline = true;
     document.body.appendChild(this.videoElement);
 
-    // Create hidden audio element for WebRTC audio stream
+    // Create hidden audio element
     this.audioElement = document.createElement("audio");
     this.audioElement.id = "audio-frame";
     this.audioElement.style.display = "none";
@@ -276,7 +355,6 @@ class WebXRController {
     this.audioElement.volume = 1.0;
     document.body.appendChild(this.audioElement);
 
-    // Create video texture and apply to screen material
     this.setupVideoTexture();
   }
 
@@ -887,7 +965,7 @@ class WebXRController {
       raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
       // Check what we're hitting
-      const interactableObjects = [this.videoScreen, ...this.uiPanels];
+      const interactableObjects = [this.videoScreenGroup, ...this.uiPanels];
       if (this.menuVisible && this.categoryButtons) {
         this.categoryButtons.forEach((b) => interactableObjects.push(b.panel));
       }
@@ -1163,16 +1241,19 @@ class WebXRController {
     const controller = this.controllers[controllerIndex];
     if (!controller) return null;
 
-    // Set up raycaster
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-    // Check all manipulable objects
-    const manipulableObjects = [this.videoScreen, ...this.uiPanels];
-    const intersects = raycaster.intersectObjects(manipulableObjects, false);
+    // Check all manipulable objects - use videoScreenGroup instead of videoScreen
+    const manipulableObjects = [this.videoScreenGroup, ...this.uiPanels];
+    const intersects = raycaster.intersectObjects(manipulableObjects, true); // true = check children
 
-    return intersects.length > 0 ? intersects[0].object : null;
+    return intersects.length > 0
+      ? intersects[0].object.parent === this.videoScreenGroup
+        ? this.videoScreenGroup
+        : intersects[0].object
+      : null;
   }
 
   updateScreenManipulation() {
