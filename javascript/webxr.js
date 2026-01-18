@@ -54,10 +54,11 @@ class WebXRController {
     this.screenAdjustSpeed = 0.1;
     this.scaleAdjustSpeed = 0.1;
 
-    // Screen manipulation mode
-    this.screenManipulationMode = false;
-    this.lastControllerPosition = null;
-    this.manipulationStartDistance = null;
+    // Replace the old manipulation properties with these:
+    this.twoHandedManipulation = false;
+    this.oneHandedManipulation = false;
+    this.manipulatingHand = null;
+    this.manipulationStartData = null;
 
     this.init();
   }
@@ -455,27 +456,19 @@ class WebXRController {
     console.log(`Controller ${index} connected:`, event.data);
 
     const controller = this.controllers[index];
-
-    // CRITICAL: Store gamepad reference from event
     controller.gamepad = event.data.gamepad;
 
     const controllerGrip = this.renderer.xr.getControllerGrip(index);
-
-    // Load dynamic controller models
     const controllerModelFactory = new XRControllerModelFactory();
     const controllerModel =
       controllerModelFactory.createControllerModel(controllerGrip);
     controllerGrip.add(controllerModel);
-
     this.scene.add(controllerGrip);
 
-    // Add laser pointer to RIGHT controller
-    if (index === 1) {
-      this.laserPointer = this.createLaserPointer(controller);
-      this.vrLog("Laser added to RIGHT controller");
-    }
+    // Add laser pointer to BOTH controllers (not just right)
+    this.createLaserPointer(controller);
+    this.vrLog(`Laser added to ${index === 0 ? "LEFT" : "RIGHT"} controller`);
 
-    // Setup joystick input handling
     this.setupJoystickInput(index);
 
     this.vrLog(
@@ -853,19 +846,53 @@ class WebXRController {
     const material = new THREE.LineBasicMaterial({
       color: 0x00ff00,
       linewidth: 2,
-      opacity: 0.8,
+      opacity: 0.5, // Semi-transparent when not hitting anything
       transparent: true,
     });
 
     const laser = new THREE.Line(geometry, material);
 
     const dotGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-    const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const dotMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.8,
+    });
     const dot = new THREE.Mesh(dotGeometry, dotMaterial);
     dot.position.set(0, 0, -5);
     laser.add(dot);
 
-    laser.visible = false;
+    laser.visible = true; // Always visible now!
+    controller.add(laser);
+
+    return laser;
+  }
+
+  createLaserPointer(controller) {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array([0, 0, 0, 0, 0, -5]);
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      linewidth: 2,
+      opacity: 0.5, // Semi-transparent when not hitting anything
+      transparent: true,
+    });
+
+    const laser = new THREE.Line(geometry, material);
+
+    const dotGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+    const dotMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+    dot.position.set(0, 0, -5);
+    laser.add(dot);
+
+    laser.visible = true; // Always visible now!
     controller.add(laser);
 
     return laser;
@@ -914,6 +941,9 @@ class WebXRController {
         }
       }
     }
+
+    // Update laser pointers (add this line)
+    this.updateLaserPointers();
 
     // Update joystick input
     this.updateJoystickMovement();
@@ -1094,46 +1124,162 @@ class WebXRController {
     const session = this.renderer.xr.getSession();
     if (!session) return;
 
-    let triggerPressed = false;
-    let manipulatingController = null;
+    // Get both controllers' trigger states
+    const leftSource = Array.from(session.inputSources).find(
+      (s) => s.handedness === "left",
+    );
+    const rightSource = Array.from(session.inputSources).find(
+      (s) => s.handedness === "right",
+    );
 
-    // Check which controller has trigger pressed
-    for (const source of session.inputSources) {
-      if (source.gamepad) {
-        const triggerButton = source.gamepad.buttons[0]; // Trigger is button 0
-        if (triggerButton && triggerButton.pressed) {
-          triggerPressed = true;
-          manipulatingController = source;
-          break;
+    const leftTrigger = leftSource?.gamepad?.buttons[0]?.pressed || false;
+    const rightTrigger = rightSource?.gamepad?.buttons[0]?.pressed || false;
+
+    const leftGrip = leftSource?.gamepad?.buttons[1]?.pressed || false;
+    const rightGrip = rightSource?.gamepad?.buttons[1]?.pressed || false;
+
+    // TWO-HANDED MANIPULATION (both grips + pointing at screen)
+    if (leftGrip && rightGrip) {
+      if (!this.twoHandedManipulation) {
+        // Check if both controllers are pointing at screen
+        const leftPointing = this.isControllerPointingAtScreen(leftSource);
+        const rightPointing = this.isControllerPointingAtScreen(rightSource);
+
+        if (leftPointing || rightPointing) {
+          this.twoHandedManipulation = true;
+          this.manipulationStartData = {
+            leftPos: this.getControllerWorldPosition(leftSource),
+            rightPos: this.getControllerWorldPosition(rightSource),
+            initialDistance: this.getControllerWorldPosition(
+              leftSource,
+            ).distanceTo(this.getControllerWorldPosition(rightSource)),
+            initialScale: this.screenScale,
+            initialScreenPos: this.videoScreen.position.clone(),
+          };
+          this.vrLog("Two-handed manipulation started");
         }
+      } else {
+        // Update screen based on two-handed manipulation
+        this.updateTwoHandedManipulation(leftSource, rightSource);
       }
+    } else if (this.twoHandedManipulation) {
+      // Released grips - end two-handed manipulation
+      this.twoHandedManipulation = false;
+      this.manipulationStartData = null;
+      this.vrLog("Two-handed manipulation ended");
     }
 
-    // Enter/exit manipulation mode based on trigger state
-    if (triggerPressed && !this.screenManipulationMode) {
-      // Just pressed trigger - check if pointing at screen
-      if (this.isControllerPointingAtScreen(manipulatingController)) {
-        this.screenManipulationMode = true;
-        this.lastControllerPosition = this.getControllerWorldPosition(
-          manipulatingController,
-        );
-        this.manipulationStartDistance = this.getControllerDistanceToScreen(
-          manipulatingController,
-        );
-        this.vrLog("Screen manipulation started");
-      }
-    } else if (!triggerPressed && this.screenManipulationMode) {
-      // Just released trigger - exit manipulation mode
-      this.screenManipulationMode = false;
-      this.lastControllerPosition = null;
-      this.manipulationStartDistance = null;
-      this.vrLog("Screen manipulation ended");
-    }
+    // ONE-HANDED MANIPULATION (single grip while pointing at screen)
+    // Only if NOT doing two-handed manipulation
+    if (!this.twoHandedManipulation) {
+      const activeSource = leftGrip
+        ? leftSource
+        : rightGrip
+          ? rightSource
+          : null;
 
-    // If in manipulation mode, update screen based on controller movement
-    if (this.screenManipulationMode && manipulatingController) {
-      this.updateScreenFromControllerMovement(manipulatingController);
+      if (activeSource && !this.oneHandedManipulation) {
+        // Check if pointing at screen
+        if (this.isControllerPointingAtScreen(activeSource)) {
+          this.oneHandedManipulation = true;
+          this.manipulatingHand = activeSource.handedness;
+          this.manipulationStartData = {
+            controllerPos: this.getControllerWorldPosition(activeSource),
+            screenPos: this.videoScreen.position.clone(),
+            controllerToScreen: this.videoScreen.position
+              .clone()
+              .sub(this.getControllerWorldPosition(activeSource)),
+          };
+          this.vrLog(
+            `One-handed manipulation started (${this.manipulatingHand})`,
+          );
+        }
+      } else if (!activeSource && this.oneHandedManipulation) {
+        // Released grip - end one-handed manipulation
+        this.oneHandedManipulation = false;
+        this.manipulatingHand = null;
+        this.manipulationStartData = null;
+        this.vrLog("One-handed manipulation ended");
+      } else if (this.oneHandedManipulation && activeSource) {
+        // Update screen position based on controller movement
+        this.updateOneHandedManipulation(activeSource);
+      }
     }
+  }
+
+  updateTwoHandedManipulation(leftSource, rightSource) {
+    const leftPos = this.getControllerWorldPosition(leftSource);
+    const rightPos = this.getControllerWorldPosition(rightSource);
+
+    if (!leftPos || !rightPos || !this.manipulationStartData) return;
+
+    // Calculate current distance between controllers
+    const currentDistance = leftPos.distanceTo(rightPos);
+
+    // Calculate scale based on distance change (pinch to scale)
+    const distanceRatio =
+      currentDistance / this.manipulationStartData.initialDistance;
+    const newScale = this.manipulationStartData.initialScale * distanceRatio;
+
+    // Clamp scale
+    this.screenScale = Math.max(0.3, Math.min(5.0, newScale));
+    this.videoScreen.scale.setScalar(this.screenScale);
+
+    // Calculate midpoint between controllers for position
+    const midpoint = new THREE.Vector3()
+      .addVectors(leftPos, rightPos)
+      .multiplyScalar(0.5);
+
+    const startMidpoint = new THREE.Vector3()
+      .addVectors(
+        this.manipulationStartData.leftPos,
+        this.manipulationStartData.rightPos,
+      )
+      .multiplyScalar(0.5);
+
+    // Move screen based on midpoint movement
+    const midpointDelta = midpoint.clone().sub(startMidpoint);
+    const newScreenPos = this.manipulationStartData.initialScreenPos
+      .clone()
+      .add(midpointDelta);
+
+    // Apply position with bounds
+    this.videoScreen.position.set(
+      Math.max(-10, Math.min(10, newScreenPos.x)),
+      Math.max(-5, Math.min(10, newScreenPos.y)),
+      Math.max(-15, Math.min(-1, newScreenPos.z)),
+    );
+
+    // Update start data for continuous manipulation
+    this.manipulationStartData.leftPos = leftPos;
+    this.manipulationStartData.rightPos = rightPos;
+    this.manipulationStartData.initialDistance = currentDistance;
+    this.manipulationStartData.initialScale = this.screenScale;
+    this.manipulationStartData.initialScreenPos =
+      this.videoScreen.position.clone();
+  }
+
+  updateOneHandedManipulation(controllerSource) {
+    const currentPos = this.getControllerWorldPosition(controllerSource);
+    if (!currentPos || !this.manipulationStartData) return;
+
+    // Move screen to maintain offset from controller
+    const newScreenPos = currentPos
+      .clone()
+      .add(this.manipulationStartData.controllerToScreen);
+
+    // Apply position with bounds
+    this.videoScreen.position.set(
+      Math.max(-10, Math.min(10, newScreenPos.x)),
+      Math.max(-5, Math.min(10, newScreenPos.y)),
+      Math.max(-15, Math.min(-1, newScreenPos.z)),
+    );
+
+    // Update for continuous movement
+    this.manipulationStartData.controllerPos = currentPos;
+    this.manipulationStartData.controllerToScreen = this.videoScreen.position
+      .clone()
+      .sub(currentPos);
   }
 
   isControllerPointingAtScreen(controllerSource) {
