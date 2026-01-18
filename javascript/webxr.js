@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { VRButton } from "three/addons/webxr/VRButton.js";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { Go2WebRTC } from "./go2webrtc.js";
 
@@ -107,10 +106,6 @@ class WebXRController {
     console.log(`AR supported: ${isARSupported}`);
     console.log(`VR supported: ${isVRSupported}`);
 
-    alert(
-      `AR: ${isARSupported ? "YES" : "NO"}, VR: ${isVRSupported ? "YES" : "NO"}`,
-    );
-
     if (!isARSupported && !isVRSupported) {
       console.error("Neither Immersive AR nor VR supported");
       alert("This device doesn't support WebXR AR or VR");
@@ -163,17 +158,6 @@ class WebXRController {
 
       buttonContainer.appendChild(arButton);
       console.log("Manual AR button created");
-    }
-
-    // VR BUTTON (using Three.js helper)
-    if (isVRSupported) {
-      const vrButton = VRButton.createButton(this.renderer);
-      vrButton.textContent = "Enter VR";
-      vrButton.style.backgroundColor = "#2196F3";
-      vrButton.style.padding = "12px 24px";
-      vrButton.style.fontSize = "16px";
-      buttonContainer.appendChild(vrButton);
-      console.log("VR button created");
     }
 
     document.body.appendChild(buttonContainer);
