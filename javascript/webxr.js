@@ -1307,12 +1307,8 @@ class WebXRController {
       .clone()
       .add(midpointDelta);
 
-    // Apply position with bounds
-    targetObject.position.set(
-      Math.max(-10, Math.min(10, newObjectPos.x)),
-      Math.max(-5, Math.min(10, newObjectPos.y)),
-      Math.max(-15, Math.min(-1, newObjectPos.z)),
-    );
+    // Apply position without bounds - full freedom!
+    targetObject.position.copy(newObjectPos);
 
     // AUTO-ROTATE TO FACE USER while moving
     const cameraPos = new THREE.Vector3();
