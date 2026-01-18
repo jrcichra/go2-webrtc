@@ -589,7 +589,7 @@ class WebXRController {
 
     const forward = -leftStickY * this.movementSpeed;
     const strafe = -leftStickX * this.movementSpeed;
-    const turn = -rightStickX * this.movementSpeed;
+    const turn = -rightStickX * this.movementSpeed * 2.0; // 2x faster rotation
 
     if (!this.prevMovement) {
       this.prevMovement = { forward: 0, strafe: 0, turn: 0 };
