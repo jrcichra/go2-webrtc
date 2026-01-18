@@ -29,14 +29,14 @@ class WebXRController {
     this.menuVisible = false;
     this.selectedMenuItem = -1;
     this.currentCategory = null;
-    this.menuPage = 0; // Add this back
-    this.menuItemsPerPage = 8; // Add this back
+    this.menuPage = 0;
+    this.menuItemsPerPage = 8;
     this.lastButtonStates = {
       leftMenu: false,
       rightMenu: false,
       leftTrigger: false,
       rightTrigger: false,
-      rightSelect: false, // Add this
+      rightSelect: false,
     };
 
     // Movement speed multiplier (0.0 to 1.0)
@@ -77,14 +77,12 @@ class WebXRController {
 
   async requestVideoPlayPermission() {
     try {
-      // Try to play with user gesture
       await this.videoElement.play();
       this.vrLog("Video play permission granted!");
       return true;
     } catch (err) {
       this.vrLog(`Video play blocked: ${err.name}`);
 
-      // If it's a NotAllowedError, we need user interaction
       if (err.name === "NotAllowedError") {
         this.vrLog("Need user interaction - press trigger!");
         return false;
@@ -156,7 +154,8 @@ class WebXRController {
   setupScene() {
     // Create scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1f1f1f);
+    // IMPORTANT: Start with null background for AR passthrough
+    this.scene.background = null;
 
     // Create camera
     this.camera = new THREE.PerspectiveCamera(
@@ -166,10 +165,12 @@ class WebXRController {
       1000,
     );
 
-    // Create renderer (transparent for AR passthrough)
+    // Create renderer with alpha: true for transparency
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor(0x000000, 0); // Transparent black background
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    // CRITICAL: Don't auto-clear in AR mode
+    this.renderer.autoClear = false;
     this.renderer.xr.enabled = true;
     document.body.appendChild(this.renderer.domElement);
 
@@ -224,20 +225,20 @@ class WebXRController {
 
     // Create hidden video element for WebRTC video stream
     this.videoElement = document.createElement("video");
-    this.videoElement.id = "video-frame"; // Match what Go2WebRTC expects
+    this.videoElement.id = "video-frame";
     this.videoElement.style.display = "none";
     this.videoElement.autoplay = true;
     this.videoElement.muted = true;
-    this.videoElement.playsInline = true; // Important for mobile/VR
+    this.videoElement.playsInline = true;
     document.body.appendChild(this.videoElement);
 
-    // Create hidden audio element for WebRTC audio stream (what the dog hears)
+    // Create hidden audio element for WebRTC audio stream
     this.audioElement = document.createElement("audio");
-    this.audioElement.id = "audio-frame"; // Match what Go2WebRTC expects
+    this.audioElement.id = "audio-frame";
     this.audioElement.style.display = "none";
     this.audioElement.autoplay = true;
-    this.audioElement.muted = false; // NOT muted - we want to hear the audio!
-    this.audioElement.volume = 1.0; // Full volume
+    this.audioElement.muted = false;
+    this.audioElement.volume = 1.0;
     document.body.appendChild(this.audioElement);
 
     // Create video texture and apply to screen material
@@ -259,7 +260,7 @@ class WebXRController {
 
         // Switch to video texture and remove red tint
         this.videoScreen.material.map = this.videoTexture;
-        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
+        this.videoScreen.material.color.set(0xffffff);
         this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
         this.vrLog("Red tint removed!");
@@ -268,9 +269,8 @@ class WebXRController {
       this.videoElement.addEventListener("loadeddata", () => {
         this.vrLog("Video data loaded!");
 
-        // Switch to video texture as soon as we have data
         this.videoScreen.material.map = this.videoTexture;
-        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
+        this.videoScreen.material.color.set(0xffffff);
         this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
       });
@@ -278,9 +278,8 @@ class WebXRController {
       this.videoElement.addEventListener("playing", () => {
         this.vrLog("Video PLAYING!");
 
-        // Make sure texture is applied and red tint is gone
         this.videoScreen.material.map = this.videoTexture;
-        this.videoScreen.material.color.set(0xffffff); // WHITE - remove red tint
+        this.videoScreen.material.color.set(0xffffff);
         this.videoScreen.material.needsUpdate = true;
         this.videoTexture.needsUpdate = true;
       });
@@ -288,9 +287,8 @@ class WebXRController {
       this.videoElement.addEventListener("canplay", () => {
         this.vrLog("Video can play!");
 
-        // One more attempt to remove red tint
         this.videoScreen.material.map = this.videoTexture;
-        this.videoScreen.material.color.set(0xffffff); // WHITE
+        this.videoScreen.material.color.set(0xffffff);
         this.videoScreen.material.needsUpdate = true;
       });
 
@@ -353,7 +351,7 @@ class WebXRController {
 
     const panel = new THREE.Mesh(panelGeometry, panelMaterial);
     panel.position.set(x, y, z);
-    panel.rotation.y = x > 0 ? -Math.PI * 0.1 : Math.PI * 0.1; // Slight angle
+    panel.rotation.y = x > 0 ? -Math.PI * 0.1 : Math.PI * 0.1;
 
     this.scene.add(panel);
 
@@ -429,16 +427,15 @@ class WebXRController {
 
     const controllerGrip = this.renderer.xr.getControllerGrip(index);
 
-    // Load dynamic controller models that show button states
+    // Load dynamic controller models
     const controllerModelFactory = new XRControllerModelFactory();
     const controllerModel =
       controllerModelFactory.createControllerModel(controllerGrip);
     controllerGrip.add(controllerModel);
 
-    // Add grip to scene
     this.scene.add(controllerGrip);
 
-    // Add laser pointer to RIGHT controller (index 1)
+    // Add laser pointer to RIGHT controller
     if (index === 1) {
       this.laserPointer = this.createLaserPointer(controller);
       this.vrLog("Laser added to RIGHT controller");
@@ -463,7 +460,7 @@ class WebXRController {
   setupJoystickInput(controllerIndex) {
     const controller = this.controllers[controllerIndex];
 
-    // Add select events for triggers (recommended Three.js approach)
+    // Add select events for triggers
     controller.addEventListener("selectstart", (event) => {
       console.log(
         `Controller ${controllerIndex} trigger pressed (selectstart)`,
@@ -501,7 +498,6 @@ class WebXRController {
       console.log(`Controller ${controllerIndex} trigger select (full press)`);
     });
 
-    // Monitor axes (joysticks) in animation loop
     this.lastJoystickValues = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
   }
 
@@ -533,7 +529,7 @@ class WebXRController {
             }
           }
 
-          // Fallback to axes[0] and axes[1] if extended axes didn't work
+          // Fallback to axes[0] and axes[1]
           if (leftStickX === 0 && leftStickY === 0 && gamepad.axes.length > 1) {
             const x0 = gamepad.axes[0] || 0;
             const y1 = gamepad.axes[1] || 0;
@@ -553,7 +549,7 @@ class WebXRController {
             }
           }
 
-          // Fallback to axes[0] if extended axes didn't work
+          // Fallback to axes[0]
           if (rightStickX === 0 && gamepad.axes.length > 1) {
             const x0 = gamepad.axes[0] || 0;
             if (Math.abs(x0) > deadzone) {
@@ -564,21 +560,14 @@ class WebXRController {
       }
     }
 
-    // Map VR joysticks to robot movement (Swapped controls)
-    // Left Stick Y (Inverted): Forward/Backward (x)
-    // Left Stick X (Inverted): Strafe Left/Right (y)
-    // Right Stick X (Inverted): Turn Left/Right (z)
+    const forward = -leftStickY * this.movementSpeed;
+    const strafe = -leftStickX * this.movementSpeed;
+    const turn = -rightStickX * this.movementSpeed;
 
-    const forward = -leftStickY * this.movementSpeed; // x
-    const strafe = -leftStickX * this.movementSpeed; // y (Strafe)
-    const turn = -rightStickX * this.movementSpeed; // z (Turn)
-
-    // Store previous values to detect changes
     if (!this.prevMovement) {
       this.prevMovement = { forward: 0, strafe: 0, turn: 0 };
     }
 
-    // Check if there's any significant input OR if we need to send a stop command
     const hasInput =
       Math.abs(forward) > 0.01 ||
       Math.abs(strafe) > 0.01 ||
@@ -588,18 +577,13 @@ class WebXRController {
       Math.abs(this.prevMovement.strafe) > 0.01 ||
       Math.abs(this.prevMovement.turn) > 0.01;
 
-    // Send command if:
-    // 1. There's input now, OR
-    // 2. There was input before but not now (send stop command)
     if (hasInput || hadInput) {
-      // RATE LIMITING: Only send every 100ms to avoid spam
       const now = Date.now();
       if (now - this.lastMovementTime < 100) {
         return;
       }
       this.lastMovementTime = now;
 
-      // Log if there's actual movement or if we're stopping
       if (hasInput) {
         this.vrLog(
           `Move: F${forward.toFixed(1)}, S${strafe.toFixed(1)}, T${turn.toFixed(1)}`,
@@ -609,8 +593,6 @@ class WebXRController {
       }
 
       this.sendMovement(forward, strafe, turn);
-
-      // Store current values
       this.prevMovement = { forward, strafe, turn };
     }
   }
@@ -621,7 +603,6 @@ class WebXRController {
       return;
     }
 
-    // Check data channel state
     if (!this.rtc.channel) {
       this.vrLog("Move failed: No channel");
       return;
@@ -637,14 +618,13 @@ class WebXRController {
 
     this.rtc.publishApi(
       "rt/api/sport/request",
-      1008, // Move command
+      1008,
       JSON.stringify({ x: x, y: y, z: z }),
     );
   }
 
   async connectToRobot() {
     try {
-      // Auto-connect to 10.0.0.207
       const robotIP = "10.0.0.207";
       const token = localStorage.getItem("token") || "";
 
@@ -654,7 +634,6 @@ class WebXRController {
 
       console.log(`Auto-connecting to robot at ${robotIP}`);
 
-      // Redirect Go2WebRTC logs to VR debug panel
       globalThis.logMessage = (msg) => {
         console.log("[Go2WebRTC]", msg);
         this.vrLog(`[RTC] ${msg}`);
@@ -664,7 +643,7 @@ class WebXRController {
       const signalingServer = "10.0.0.43";
       this.rtc = new Go2WebRTC(token, robotIP, null, signalingServer);
 
-      // Monitor track events directly
+      // Monitor track events
       this.rtc.pc.addEventListener("track", (event) => {
         this.vrLog(`Track event: ${event.track.kind}`);
         console.log("Track event received:", event);
@@ -674,8 +653,6 @@ class WebXRController {
           console.log("Video track details:", event.track);
           console.log("Video streams:", event.streams);
 
-          // The go2webrtc.js should handle assigning srcObject
-          // But we'll monitor to see if it happens
           setTimeout(() => {
             if (this.videoElement.srcObject) {
               this.vrLog("Video srcObject assigned by go2webrtc!");
@@ -689,22 +666,17 @@ class WebXRController {
             }
           }, 100);
         } else if (event.track.kind === "audio") {
-          this.vrLog("Audio track received! (What the dog hears)");
+          this.vrLog("Audio track received!");
           console.log("Audio track details:", event.track);
           console.log("Audio streams:", event.streams);
 
-          // The go2webrtc.js should handle assigning srcObject to audio element
-          // But we'll monitor to see if it happens
           setTimeout(() => {
             if (this.audioElement.srcObject) {
               this.vrLog("Audio srcObject assigned by go2webrtc!");
-              // Try to play the audio
               this.audioElement
                 .play()
                 .then(() => {
-                  this.vrLog(
-                    "Audio playing! You should hear what the dog hears.",
-                  );
+                  this.vrLog("Audio playing!");
                 })
                 .catch((err) => {
                   this.vrLog(`Audio play failed: ${err.message}`);
@@ -713,13 +685,10 @@ class WebXRController {
               this.vrLog("No audio srcObject - assigning manually...");
               if (event.streams && event.streams[0]) {
                 this.audioElement.srcObject = event.streams[0];
-                // Try to play the audio
                 this.audioElement
                   .play()
                   .then(() => {
-                    this.vrLog(
-                      "Audio playing! You should hear what the dog hears.",
-                    );
+                    this.vrLog("Audio playing!");
                   })
                   .catch((err) => {
                     this.vrLog(`Audio play failed: ${err.message}`);
@@ -730,7 +699,7 @@ class WebXRController {
         }
       });
 
-      // Add ICE state monitoring with more detail
+      // ICE state monitoring
       this.rtc.pc.addEventListener("iceconnectionstatechange", () => {
         const state = this.rtc.pc.iceConnectionState;
         this.vrLog(`ICE State: ${state}`);
@@ -738,7 +707,6 @@ class WebXRController {
 
         if (state === "disconnected") {
           this.vrLog("ICE DISCONNECTED! Will retry...");
-          // Don't panic - disconnected can recover
         } else if (state === "failed") {
           this.vrLog("ICE FAILED! Connection lost!");
         } else if (state === "connected") {
@@ -764,7 +732,7 @@ class WebXRController {
         this.vrLog(`Connection: ${this.rtc.pc.connectionState}`);
       });
 
-      // CRITICAL: Enable microphone BEFORE initSDP so it's included in the offer (only if enabled)
+      // Enable microphone if setting is on
       if (this.microphoneEnabled) {
         try {
           await this.rtc.enableMicrophone();
@@ -779,7 +747,7 @@ class WebXRController {
         this.vrLog("Microphone disabled by user setting");
       }
 
-      // NOW create the SDP offer with the microphone track included
+      // Create SDP offer
       try {
         await this.rtc.initSDP();
         this.isConnected = true;
@@ -799,9 +767,6 @@ class WebXRController {
             if (!this.channelOpenLogged) {
               this.vrLog("Channel OPEN! Ready!");
               this.channelOpenLogged = true;
-
-              // DON'T manually request video - let go2webrtc handle it via validation
-              // The rtcValidation function in go2webrtc.js will send the "on" message
             }
 
             this.updateStatusPanel(
@@ -809,7 +774,7 @@ class WebXRController {
             );
             clearInterval(this.channelMonitor);
           } else if (state === "connecting") {
-            // this.vrLog("Channel still connecting...");
+            // Channel still connecting
           } else if (state === "closed") {
             this.vrLog("Channel CLOSED!");
           } else {
@@ -820,16 +785,15 @@ class WebXRController {
         }
       };
 
-      // Check channel state every 2 seconds
-      monitorChannel(); // Check immediately
+      monitorChannel();
       this.channelMonitor = setInterval(monitorChannel, 2000);
 
       // Periodically check video status
       this.videoStatusChecker = setInterval(() => {
         this.checkVideoStatus();
-      }, 10000); // Less frequent to reduce spam
+      }, 10000);
 
-      // Start requesting robot state for HUD
+      // Start requesting robot state
       this.startStateUpdates();
 
       this.updateStatusPanel(
@@ -861,7 +825,6 @@ class WebXRController {
 
     const laser = new THREE.Line(geometry, material);
 
-    // Add a dot at the end
     const dotGeometry = new THREE.SphereGeometry(0.02, 8, 8);
     const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const dot = new THREE.Mesh(dotGeometry, dotMaterial);
@@ -878,7 +841,6 @@ class WebXRController {
     if (!frame) return;
 
     if (this.renderer.xr.isPresenting && !this.isConnected && !this.rtc) {
-      // Read microphone setting from checkbox before connecting
       const micCheckbox = document.getElementById("enableMicrophone");
       this.microphoneEnabled = micCheckbox ? micCheckbox.checked : false;
 
@@ -888,18 +850,17 @@ class WebXRController {
       this.connectToRobot();
     }
 
-    // For AR passthrough, keep scene background transparent (null)
-    // For non-AR modes, use dark background
+    // FIXED: Proper AR passthrough handling
     if (this.renderer.xr.isPresenting) {
-      // Check if we're in AR mode by checking session mode
       const session = this.renderer.xr.getSession();
       if (session && session.mode === "immersive-ar") {
-        this.scene.background = null; // Transparent for passthrough
-      } else if (this.scene.background !== null) {
-        this.scene.background = null; // VR mode - also transparent
+        // AR mode - ensure transparent background
+        if (this.scene.background !== null) {
+          this.scene.background = null;
+        }
+        // Clear with transparency
+        this.renderer.clear();
       }
-    } else if (this.scene.background === null) {
-      this.scene.background = new THREE.Color(0x1f1f1f);
     }
 
     // Update video texture
@@ -921,7 +882,7 @@ class WebXRController {
     // Update joystick input
     this.updateJoystickMovement();
 
-    // Update menu buttons and raycasting
+    // Update menu
     this.updateMenuButtons();
     if (this.menuVisible) {
       this.updateMenuRaycasting();
@@ -930,9 +891,7 @@ class WebXRController {
     this.renderer.render(this.scene, this.camera);
   }
 
-  // Method to update debug info on VR panels
   updateDebugInfo(info) {
-    // This could update text textures on the VR panels
     console.log("VR Debug:", info);
   }
 
@@ -942,22 +901,18 @@ class WebXRController {
     }
   }
 
-  // Add a VR-visible debug log message
   vrLog(message) {
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = `${timestamp.slice(-8)}: ${message}`;
 
     console.log(`[VR] ${logEntry}`);
 
-    // Add to debug logs array
     this.debugLogs.push(logEntry);
 
-    // Keep only last N messages
     if (this.debugLogs.length > this.maxDebugLogs) {
       this.debugLogs.shift();
     }
 
-    // Update debug panel with scrolling logs
     const debugText = "DEBUG LOG\n" + this.debugLogs.join("\n");
     this.updateDebugPanel(debugText);
   }
@@ -968,18 +923,14 @@ class WebXRController {
     }
   }
 
-  // Start periodic robot state updates for HUD
   startStateUpdates() {
-    // Request state every 2 seconds
     this.stateUpdateInterval = setInterval(() => {
       this.requestRobotState();
     }, 2000);
 
-    // Also listen for state messages from the robot
     this.setupStateMessageHandler();
   }
 
-  // Request robot state information
   requestRobotState() {
     if (
       !this.rtc ||
@@ -989,18 +940,14 @@ class WebXRController {
       return;
     }
 
-    // Request GetState (command 1034)
     this.rtc.publishApi("rt/api/sport/request", 1034, "");
   }
 
-  // Setup handler for incoming state messages
   setupStateMessageHandler() {
     if (!this.rtc) return;
 
-    // Override the message callback to intercept state messages
     const originalCallback = this.rtc.messageCallback;
     this.rtc.messageCallback = (data) => {
-      // Handle state messages for HUD
       if (data && data.topic) {
         if (
           data.topic.includes("sportmodestate") ||
@@ -1010,24 +957,19 @@ class WebXRController {
         }
       }
 
-      // Call original callback if it exists
       if (originalCallback) {
         originalCallback(data);
       }
     };
   }
 
-  // Handle incoming state messages and update HUD
   handleStateMessage(data) {
     try {
       console.log("State message received:", data);
 
-      // Update robot state data
       if (data.data) {
         this.robotState = { ...this.robotState, ...data.data };
         this.lastStateUpdate = Date.now();
-
-        // Update HUD panels with new data
         this.updateHUDPanels();
       }
     } catch (error) {
@@ -1035,14 +977,12 @@ class WebXRController {
     }
   }
 
-  // Update all HUD panels with current robot state
   updateHUDPanels() {
     this.updateMovementHUD();
     this.updateBatterySensorsHUD();
     this.updateRobotStateHUD();
   }
 
-  // Update movement/control HUD
   updateMovementHUD() {
     const velocity = this.robotState.velocity || "--";
     const mode = this.robotState.mode || "Manual";
@@ -1055,7 +995,6 @@ class WebXRController {
     }
   }
 
-  // Update battery and sensors HUD
   updateBatterySensorsHUD() {
     const battery = this.robotState.battery || "--";
     const temperature = this.robotState.temperature || "--";
@@ -1069,7 +1008,6 @@ class WebXRController {
     }
   }
 
-  // Update robot state/orientation HUD
   updateRobotStateHUD() {
     const roll = this.robotState.roll ? this.robotState.roll.toFixed(1) : "--";
     const pitch = this.robotState.pitch
@@ -1087,7 +1025,6 @@ class WebXRController {
     }
   }
 
-  // Stop state updates when disconnecting
   stopStateUpdates() {
     if (this.stateUpdateInterval) {
       clearInterval(this.stateUpdateInterval);
@@ -1098,17 +1035,14 @@ class WebXRController {
   updateMenuButtons() {
     if (!this.renderer.xr.isPresenting) return;
 
-    // Only check RIGHT controller (index 1) for menu interactions
     const rightController = this.controllers[1];
     if (!rightController || !rightController.gamepad) return;
 
     const gamepad = rightController.gamepad;
 
-    // Button 5 = A button on Quest controllers for menu toggle
     const menuButton = gamepad.buttons[5];
     const menuPressed = menuButton && menuButton.pressed;
 
-    // Check for A button press to toggle menu (detect rising edge)
     if (menuPressed && !this.lastButtonStates.rightMenu) {
       this.toggleMenu();
     }
@@ -1130,15 +1064,12 @@ class WebXRController {
       this.menuGroup.visible = true;
     }
 
-    // Show laser pointer
     if (this.laserPointer) {
       this.laserPointer.visible = true;
     }
 
-    // Reset to category view
     this.hideCommandButtons();
 
-    // Make sure category buttons are visible
     if (this.categoryButtons) {
       this.categoryButtons.forEach((b) => {
         b.panel.visible = true;
@@ -1158,7 +1089,6 @@ class WebXRController {
       this.menuGroup.visible = false;
     }
 
-    // Hide laser pointer
     if (this.laserPointer) {
       this.laserPointer.visible = false;
     }
@@ -1174,23 +1104,19 @@ class WebXRController {
   updateMenuRaycasting() {
     if (!this.menuVisible || !this.renderer.xr.isPresenting) return;
 
-    // Use controller 1 (RIGHT hand) for raycasting
     const controller = this.controllers[1];
     if (!controller) {
       this.vrLog("No right controller found!");
       return;
     }
 
-    // Create raycaster from controller position
     const raycaster = new THREE.Raycaster();
     const tempMatrix = new THREE.Matrix4();
 
-    // Set raycaster from controller
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-    // Get all interactive menu objects
     const interactiveObjects = [];
 
     if (this.categoryButtons) {
@@ -1205,7 +1131,6 @@ class WebXRController {
       });
     }
 
-    // Clear previous selection - hide all wireframes
     if (this.categoryButtons) {
       this.categoryButtons.forEach((b) => {
         if (b.wireframe) b.wireframe.visible = false;
@@ -1217,20 +1142,16 @@ class WebXRController {
       });
     }
 
-    // Find intersections - ONLY check menu objects, not all scene objects
-    const intersects = raycaster.intersectObjects(interactiveObjects, false); // false = don't check children recursively
+    const intersects = raycaster.intersectObjects(interactiveObjects, false);
 
-    // Debug: log what we're hitting
     if (intersects.length > 0) {
       const hit = intersects[0];
       this.vrLog(`Raycast hit at distance: ${hit.distance.toFixed(2)}m`);
     }
 
-    // Highlight selected object
     if (intersects.length > 0) {
       const selectedObject = intersects[0].object;
 
-      // Find the button that owns this panel
       let selectedButton = null;
 
       if (this.categoryButtons) {
@@ -1248,7 +1169,6 @@ class WebXRController {
       if (selectedButton && selectedButton.wireframe) {
         selectedButton.wireframe.visible = true;
         this.selectedButton = selectedButton;
-        // Only log occasionally to avoid spam
         if (
           !this.lastLoggedButton ||
           this.lastLoggedButton !== selectedButton
@@ -1291,8 +1211,8 @@ class WebXRController {
       this.vrLog("ERROR: No onClick function found!");
     }
   }
+
   createCommandMenu() {
-    // Define robot commands organized by category
     this.robotCommands = {
       basic: [
         { id: 1004, name: "Stand Up", desc: "Stand on all fours" },
@@ -1319,23 +1239,16 @@ class WebXRController {
       ],
     };
 
-    // Create menu background panel
     this.createMenuBackground();
-
-    // Create menu category buttons
     this.createMenuCategories();
-
-    // IMPORTANT: Start hidden
     this.hideMenu();
     this.vrLog("Menu created (hidden)");
   }
 
   createMenuBackground() {
-    // Create a group to hold all menu elements
     this.menuGroup = new THREE.Group();
-    this.menuGroup.position.set(0, 1.5, -2); // Position in world space in front of starting position
+    this.menuGroup.position.set(0, 1.5, -2);
 
-    // Smaller background panel
     const bgGeometry = new THREE.PlaneGeometry(2.5, 2);
     const bgMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
@@ -1345,7 +1258,6 @@ class WebXRController {
     this.menuBackground = new THREE.Mesh(bgGeometry, bgMaterial);
     this.menuBackground.position.set(0, 0, 0);
 
-    // Add border
     const borderGeometry = new THREE.EdgesGeometry(bgGeometry);
     const borderMaterial = new THREE.LineBasicMaterial({
       color: 0x00ff00,
@@ -1356,7 +1268,6 @@ class WebXRController {
 
     this.menuGroup.add(this.menuBackground);
 
-    // Menu title - smaller
     const titleCanvas = document.createElement("canvas");
     const titleContext = titleCanvas.getContext("2d");
     titleCanvas.width = 512;
@@ -1385,10 +1296,7 @@ class WebXRController {
 
     this.menuTitleTextMesh.updateText("ROBOT COMMANDS");
 
-    // Add menu group to SCENE (not camera) so it stays in world space
     this.scene.add(this.menuGroup);
-
-    // Start hidden
     this.menuGroup.visible = false;
   }
 
@@ -1414,7 +1322,7 @@ class WebXRController {
       const button = this.createMenuButton(
         cat.name,
         cat.x,
-        0.3, // Relative to menuGroup
+        0.3,
         0.01,
         cat.color,
         () => this.showCategory(cat.key),
@@ -1431,7 +1339,7 @@ class WebXRController {
     canvas.height = 128;
 
     const texture = new THREE.CanvasTexture(canvas);
-    const buttonGeometry = new THREE.PlaneGeometry(0.7, 0.35); // Much smaller buttons
+    const buttonGeometry = new THREE.PlaneGeometry(0.7, 0.35);
     const buttonMaterial = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
@@ -1441,7 +1349,6 @@ class WebXRController {
     button.position.set(x, y, z);
     button.userData = { onClick, type: "button", color };
 
-    // Add wireframe for selection highlight
     const wireframeGeometry = new THREE.EdgesGeometry(buttonGeometry);
     const wireframeMaterial = new THREE.LineBasicMaterial({
       color: 0xffff00,
@@ -1465,7 +1372,7 @@ class WebXRController {
         context.fillRect(0, 0, canvas.width, canvas.height);
 
         context.fillStyle = "#ffffff";
-        context.font = "bold 16px Arial"; // Smaller font
+        context.font = "bold 16px Arial";
         context.textAlign = "center";
         context.textBaseline = "middle";
 
@@ -1474,7 +1381,7 @@ class WebXRController {
           context.fillText(
             line,
             canvas.width / 2,
-            canvas.height / 2 + (i - 0.5) * 20, // Tighter line spacing
+            canvas.height / 2 + (i - 0.5) * 20,
           );
         });
 
@@ -1488,10 +1395,8 @@ class WebXRController {
   }
 
   showCategory(categoryKey) {
-    // Hide existing command buttons
     this.hideCommandButtons();
 
-    // IMPORTANT: Hide category buttons when showing a submenu
     if (this.categoryButtons) {
       this.categoryButtons.forEach((b) => {
         b.panel.visible = false;
@@ -1504,7 +1409,6 @@ class WebXRController {
     this.currentCategory = categoryKey;
     this.commandButtons = [];
 
-    // Calculate pagination
     const startIndex = this.menuPage * this.menuItemsPerPage;
     const endIndex = Math.min(
       startIndex + this.menuItemsPerPage,
@@ -1530,12 +1434,10 @@ class WebXRController {
       this.menuGroup.add(button.panel);
     });
 
-    // Add navigation buttons if there are more commands than fit on one page
     if (commands.length > this.menuItemsPerPage) {
       this.addNavigationButtons(commands.length);
     }
 
-    // Add a "Back" button at the bottom
     const backButton = this.createMenuButton(
       "← BACK",
       0,
@@ -1544,7 +1446,6 @@ class WebXRController {
       0xff5722,
       () => {
         this.hideCommandButtons();
-        // IMPORTANT: Show category buttons again when going back
         if (this.categoryButtons) {
           this.categoryButtons.forEach((b) => {
             b.panel.visible = true;
@@ -1594,7 +1495,7 @@ class WebXRController {
         },
       );
       this.navButtons.push(prevButton);
-      this.menuGroup.add(prevButton.panel); // Add to menuGroup
+      this.menuGroup.add(prevButton.panel);
     }
 
     if (this.menuPage < totalPages - 1) {
@@ -1610,10 +1511,9 @@ class WebXRController {
         },
       );
       this.navButtons.push(nextButton);
-      this.menuGroup.add(nextButton.panel); // Add to menuGroup
+      this.menuGroup.add(nextButton.panel);
     }
 
-    // Show page indicator in center if there are multiple pages
     if (totalPages > 1) {
       const pageIndicator = this.createMenuButton(
         `${this.menuPage + 1}/${totalPages}`,
@@ -1621,7 +1521,7 @@ class WebXRController {
         -0.8,
         0.01,
         0x333333,
-        () => {}, // No action, just shows info
+        () => {},
       );
       this.navButtons.push(pageIndicator);
       this.menuGroup.add(pageIndicator.panel);
@@ -1646,13 +1546,10 @@ class WebXRController {
 
     this.vrLog(`Sending command: ${commandName} (${commandId})`);
 
-    // Send the command to the robot
     this.rtc.publishApi("rt/api/sport/request", commandId, "");
 
-    // Provide feedback
     this.menuTitleTextMesh.updateText(`SENT: ${commandName.toUpperCase()}`);
 
-    // Reset title after 2 seconds
     setTimeout(() => {
       if (this.currentCategory) {
         this.menuTitleTextMesh.updateText(
@@ -1665,7 +1562,6 @@ class WebXRController {
   }
 }
 
-// Initialize WebXR when the script loads
 document.addEventListener("DOMContentLoaded", () => {
   const webxr = new WebXRController();
 });
