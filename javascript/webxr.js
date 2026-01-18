@@ -1220,18 +1220,37 @@ class WebXRController {
     // Check all manipulable objects - include menuGroup
     const manipulableObjects = [this.videoScreenGroup, ...this.uiPanels];
 
-    // Add menu if it's visible
-    if (this.menuVisible && this.menuGroup) {
-      manipulableObjects.push(this.menuGroup);
+    // Add menu background (not individual buttons) if visible
+    if (this.menuVisible && this.menuBackground) {
+      manipulableObjects.push(this.menuBackground);
     }
 
     const intersects = raycaster.intersectObjects(manipulableObjects, true);
 
-    return intersects.length > 0
-      ? intersects[0].object.parent === this.videoScreenGroup
-        ? this.videoScreenGroup
-        : intersects[0].object.parent || intersects[0].object
-      : null;
+    if (intersects.length > 0) {
+      const hitObject = intersects[0].object;
+
+      // If we hit the video screen group or its children, return the group
+      if (
+        hitObject === this.videoScreenGroup ||
+        hitObject.parent === this.videoScreenGroup
+      ) {
+        return this.videoScreenGroup;
+      }
+
+      // If we hit menu background or its children, return the menuGroup
+      if (
+        hitObject === this.menuBackground ||
+        hitObject.parent === this.menuBackground
+      ) {
+        return this.menuGroup;
+      }
+
+      // Otherwise return the hit object (UI panels)
+      return hitObject;
+    }
+
+    return null;
   }
 
   updateScreenManipulation() {
