@@ -3,9 +3,6 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { Go2WebRTC } from "./go2webrtc.js";
 
-// Version number for cache busting verification
-const WEBXR_VERSION = 17;
-
 class WebXRController {
   constructor() {
     this.renderer = null;
@@ -116,7 +113,7 @@ class WebXRController {
       this.render(timestamp, frame);
     });
 
-    console.log(`WebXR initialized - Version ${WEBXR_VERSION}`);
+    console.log("WebXR initialized");
   }
 
   setupScene() {
@@ -795,7 +792,7 @@ class WebXRController {
       this.startStateUpdates();
 
       this.updateStatusPanel(
-        `STATUS\nRobot: ${robotIP}\nConnection: Initializing...\nVersion: v${WEBXR_VERSION}`,
+        `STATUS\nRobot: ${robotIP}\nConnection: Initializing...`,
       );
       this.updateDebugPanel(
         "DEBUG INFO\nLeft Stick: Strafe/Move\nRight Stick: Turn\nConnected: Yes",
