@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFa
 import { Go2WebRTC } from "./go2webrtc.js";
 
 // Version number for cache busting verification
-const WEBXR_VERSION = 16;
+const WEBXR_VERSION = 17;
 
 class WebXRController {
   constructor() {
@@ -100,10 +100,10 @@ class WebXRController {
       return;
     }
 
-    // Check for VR support
-    const isVRSupported = await navigator.xr.isSessionSupported("immersive-vr");
-    if (!isVRSupported) {
-      console.error("Immersive VR not supported");
+    // Check for AR support (passthrough)
+    const isARSupported = await navigator.xr.isSessionSupported("immersive-ar");
+    if (!isARSupported) {
+      console.error("Immersive AR not supported");
       return;
     }
 
@@ -132,9 +132,10 @@ class WebXRController {
       1000,
     );
 
-    // Create renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Create renderer (transparent for AR passthrough)
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setClearColor(0x000000, 0); // Transparent black background
     this.renderer.xr.enabled = true;
     document.body.appendChild(this.renderer.domElement);
 
@@ -842,11 +843,17 @@ class WebXRController {
       this.connectToRobot();
     }
 
-    if (this.renderer.xr.isPresenting && this.scene.background !== null) {
-      this.scene.background = null;
-    }
-
-    if (!this.renderer.xr.isPresenting && this.scene.background === null) {
+    // For AR passthrough, keep scene background transparent (null)
+    // For non-AR modes, use dark background
+    if (this.renderer.xr.isPresenting) {
+      // Check if we're in AR mode by checking session mode
+      const session = this.renderer.xr.getSession();
+      if (session && session.mode === "immersive-ar") {
+        this.scene.background = null; // Transparent for passthrough
+      } else if (this.scene.background !== null) {
+        this.scene.background = null; // VR mode - also transparent
+      }
+    } else if (this.scene.background === null) {
       this.scene.background = new THREE.Color(0x1f1f1f);
     }
 
