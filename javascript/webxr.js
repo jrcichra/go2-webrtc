@@ -1334,8 +1334,8 @@ class WebXRController {
       .clone()
       .sub(this.manipulationStartData.controllerPos);
 
-    // Apply movement directly to object (with multiplier for faster movement)
-    const speedMultiplier = 1.5; // Increase this to make it even faster (try 2.0 or 3.0)
+    // Apply movement directly to object with HIGH multiplier for VR scale
+    const speedMultiplier = 10.0; // VR movements are tiny, need big multiplier!
     const newObjectPos = targetObject.position
       .clone()
       .add(movement.multiplyScalar(speedMultiplier));
