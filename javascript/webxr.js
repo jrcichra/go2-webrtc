@@ -95,6 +95,7 @@ class WebXRController {
     // Check if WebXR is supported
     if (!navigator.xr) {
       console.error("WebXR not supported");
+      alert("WebXR not supported on this device/browser");
       return;
     }
 
@@ -102,12 +103,18 @@ class WebXRController {
     const isARSupported = await navigator.xr.isSessionSupported("immersive-ar");
     const isVRSupported = await navigator.xr.isSessionSupported("immersive-vr");
 
-    console.log(
-      `AR supported: ${isARSupported}, VR supported: ${isVRSupported}`,
+    console.log("=== DEVICE CAPABILITIES ===");
+    console.log(`AR supported: ${isARSupported}`);
+    console.log(`VR supported: ${isVRSupported}`);
+
+    // CRITICAL: Alert user what's available
+    alert(
+      `AR: ${isARSupported ? "YES" : "NO"}, VR: ${isVRSupported ? "YES" : "NO"}`,
     );
 
     if (!isARSupported && !isVRSupported) {
       console.error("Neither Immersive AR nor VR supported");
+      alert("This device doesn't support WebXR AR or VR");
       return;
     }
 
@@ -122,6 +129,7 @@ class WebXRController {
     buttonContainer.style.transform = "translateX(-50%)";
     buttonContainer.style.display = "flex";
     buttonContainer.style.gap = "10px";
+    buttonContainer.style.zIndex = "1000";
 
     if (isARSupported) {
       // Create AR button for passthrough
@@ -131,7 +139,10 @@ class WebXRController {
       });
       arButton.textContent = "Enter AR (Passthrough)";
       arButton.style.backgroundColor = "#4CAF50";
+      arButton.style.padding = "12px 24px";
+      arButton.style.fontSize = "16px";
       buttonContainer.appendChild(arButton);
+      console.log("AR button created");
     }
 
     if (isVRSupported) {
@@ -139,7 +150,10 @@ class WebXRController {
       const vrButton = VRButton.createButton(this.renderer);
       vrButton.textContent = "Enter VR";
       vrButton.style.backgroundColor = "#2196F3";
+      vrButton.style.padding = "12px 24px";
+      vrButton.style.fontSize = "16px";
       buttonContainer.appendChild(vrButton);
+      console.log("VR button created");
     }
 
     document.body.appendChild(buttonContainer);
@@ -848,6 +862,21 @@ class WebXRController {
       this.connectToRobot();
     }
 
+    // CRITICAL DEBUG: Log session mode when presenting
+    if (this.renderer.xr.isPresenting && !this.sessionModeLogged) {
+      const session = this.renderer.xr.getSession();
+      console.log("=== XR SESSION DEBUG ===");
+      console.log("Session mode:", session.mode);
+      console.log("Scene background:", this.scene.background);
+      console.log(
+        "Renderer alpha:",
+        this.renderer.getContext().getContextAttributes().alpha,
+      );
+      this.vrLog(`XR Mode: ${session.mode}`);
+      this.vrLog(`Scene bg: ${this.scene.background}`);
+      this.sessionModeLogged = true;
+    }
+
     // Update video texture
     if (this.videoTexture && this.videoElement && this.videoElement.srcObject) {
       try {
@@ -873,7 +902,6 @@ class WebXRController {
       this.updateMenuRaycasting();
     }
 
-    // Three.js automatically handles XR rendering - just call render
     this.renderer.render(this.scene, this.camera);
   }
 
