@@ -107,7 +107,6 @@ class WebXRController {
     console.log(`AR supported: ${isARSupported}`);
     console.log(`VR supported: ${isVRSupported}`);
 
-    // CRITICAL: Alert user what's available
     alert(
       `AR: ${isARSupported ? "YES" : "NO"}, VR: ${isVRSupported ? "YES" : "NO"}`,
     );
@@ -121,7 +120,7 @@ class WebXRController {
     // Initialize Three.js scene
     this.setupScene();
 
-    // Create appropriate buttons based on device capabilities
+    // Create button container
     const buttonContainer = document.createElement("div");
     buttonContainer.style.position = "absolute";
     buttonContainer.style.bottom = "20px";
@@ -131,22 +130,43 @@ class WebXRController {
     buttonContainer.style.gap = "10px";
     buttonContainer.style.zIndex = "1000";
 
+    // MANUAL AR BUTTON (more reliable)
     if (isARSupported) {
-      // Create AR button for passthrough
-      const arButton = VRButton.createButton(this.renderer, {
-        referenceSpaceType: "local-floor",
-        mode: "immersive-ar",
-      });
+      const arButton = document.createElement("button");
       arButton.textContent = "Enter AR (Passthrough)";
-      arButton.style.backgroundColor = "#4CAF50";
       arButton.style.padding = "12px 24px";
       arButton.style.fontSize = "16px";
+      arButton.style.backgroundColor = "#4CAF50";
+      arButton.style.color = "white";
+      arButton.style.border = "none";
+      arButton.style.borderRadius = "4px";
+      arButton.style.cursor = "pointer";
+
+      arButton.onclick = async () => {
+        try {
+          console.log("Requesting AR session...");
+          const session = await navigator.xr.requestSession("immersive-ar", {
+            requiredFeatures: ["local-floor"],
+          });
+          console.log("AR session acquired:", session);
+          await this.renderer.xr.setSession(session);
+          arButton.textContent = "Exit AR";
+
+          session.addEventListener("end", () => {
+            arButton.textContent = "Enter AR (Passthrough)";
+          });
+        } catch (err) {
+          console.error("AR session failed:", err);
+          alert("Failed to start AR: " + err.message);
+        }
+      };
+
       buttonContainer.appendChild(arButton);
-      console.log("AR button created");
+      console.log("Manual AR button created");
     }
 
+    // VR BUTTON (using Three.js helper)
     if (isVRSupported) {
-      // Create VR button
       const vrButton = VRButton.createButton(this.renderer);
       vrButton.textContent = "Enter VR";
       vrButton.style.backgroundColor = "#2196F3";
