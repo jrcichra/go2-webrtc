@@ -154,8 +154,7 @@ class WebXRController {
   setupScene() {
     // Create scene
     this.scene = new THREE.Scene();
-    // IMPORTANT: Start with null background for AR passthrough
-    this.scene.background = null;
+    this.scene.background = null; // CRITICAL for AR passthrough
 
     // Create camera
     this.camera = new THREE.PerspectiveCamera(
@@ -165,13 +164,12 @@ class WebXRController {
       1000,
     );
 
-    // Create renderer with alpha: true for transparency
+    // Create renderer - MINIMAL setup for AR
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    // CRITICAL: For AR passthrough, preserve drawing buffer and don't set clear color
-    this.renderer.preserveDrawingBuffer = true;
     this.renderer.xr.enabled = true;
+    // DO NOT set preserveDrawingBuffer or autoClear
     document.body.appendChild(this.renderer.domElement);
 
     // Add lighting
