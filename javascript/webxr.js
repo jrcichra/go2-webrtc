@@ -36,10 +36,28 @@ class WebXRController {
       leftTrigger: false,
       rightTrigger: false,
       rightSelect: false,
+      // Screen adjustment buttons
+      aButton: false, // scale up
+      bButton: false, // scale down
+      xButton: false, // move left
+      yButton: false, // move right
+      leftGrip: false, // move closer
+      rightGrip: false, // move further
     };
 
     // Movement speed multiplier (0.0 to 1.0)
     this.movementSpeed = 0.4;
+
+    // Video screen adjustment properties
+    this.screenScale = 1.0;
+    this.screenPosition = { x: 0, y: 2, z: -5 };
+    this.screenAdjustSpeed = 0.1;
+    this.scaleAdjustSpeed = 0.1;
+
+    // Screen manipulation mode
+    this.screenManipulationMode = false;
+    this.lastControllerPosition = null;
+    this.manipulationStartDistance = null;
 
     this.init();
   }
@@ -786,7 +804,7 @@ class WebXRController {
             }
 
             this.updateStatusPanel(
-              `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}`,
+              `STATUS\nRobot: ${robotIP}\nConnection: Connected ✓\nICE: ${this.rtc.pc.iceConnectionState}\n\nSCREEN CONTROLS:\nHold Trigger & Move\nController to Adjust\nPosition & Scale`,
             );
             clearInterval(this.channelMonitor);
           } else if (state === "connecting") {
@@ -899,6 +917,9 @@ class WebXRController {
 
     // Update joystick input
     this.updateJoystickMovement();
+
+    // Update screen manipulation (raycast-based)
+    this.updateScreenManipulation();
 
     // Update menu
     this.updateMenuButtons();
@@ -1065,6 +1086,148 @@ class WebXRController {
       this.toggleMenu();
     }
     this.lastButtonStates.rightMenu = menuPressed;
+  }
+
+  updateScreenManipulation() {
+    if (!this.renderer.xr.isPresenting || !this.videoScreen) return;
+
+    const session = this.renderer.xr.getSession();
+    if (!session) return;
+
+    let triggerPressed = false;
+    let manipulatingController = null;
+
+    // Check which controller has trigger pressed
+    for (const source of session.inputSources) {
+      if (source.gamepad) {
+        const triggerButton = source.gamepad.buttons[0]; // Trigger is button 0
+        if (triggerButton && triggerButton.pressed) {
+          triggerPressed = true;
+          manipulatingController = source;
+          break;
+        }
+      }
+    }
+
+    // Enter/exit manipulation mode based on trigger state
+    if (triggerPressed && !this.screenManipulationMode) {
+      // Just pressed trigger - check if pointing at screen
+      if (this.isControllerPointingAtScreen(manipulatingController)) {
+        this.screenManipulationMode = true;
+        this.lastControllerPosition = this.getControllerWorldPosition(
+          manipulatingController,
+        );
+        this.manipulationStartDistance = this.getControllerDistanceToScreen(
+          manipulatingController,
+        );
+        this.vrLog("Screen manipulation started");
+      }
+    } else if (!triggerPressed && this.screenManipulationMode) {
+      // Just released trigger - exit manipulation mode
+      this.screenManipulationMode = false;
+      this.lastControllerPosition = null;
+      this.manipulationStartDistance = null;
+      this.vrLog("Screen manipulation ended");
+    }
+
+    // If in manipulation mode, update screen based on controller movement
+    if (this.screenManipulationMode && manipulatingController) {
+      this.updateScreenFromControllerMovement(manipulatingController);
+    }
+  }
+
+  isControllerPointingAtScreen(controllerSource) {
+    const raycaster = new THREE.Raycaster();
+    const tempMatrix = new THREE.Matrix4();
+
+    // Get the controller
+    const controllerIndex = controllerSource.handedness === "left" ? 0 : 1;
+    const controller = this.controllers[controllerIndex];
+    if (!controller) return false;
+
+    // Set up raycaster from controller
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+    // Check intersection with screen
+    const intersects = raycaster.intersectObject(this.videoScreen, false);
+    return intersects.length > 0;
+  }
+
+  getControllerWorldPosition(controllerSource) {
+    const controllerIndex = controllerSource.handedness === "left" ? 0 : 1;
+    const controller = this.controllers[controllerIndex];
+    if (!controller) return null;
+
+    return new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+  }
+
+  getControllerDistanceToScreen(controllerSource) {
+    const controllerPos = this.getControllerWorldPosition(controllerSource);
+    if (!controllerPos) return null;
+
+    return controllerPos.distanceTo(this.videoScreen.position);
+  }
+
+  updateScreenFromControllerMovement(controllerSource) {
+    const currentPos = this.getControllerWorldPosition(controllerSource);
+    if (!currentPos || !this.lastControllerPosition) return;
+
+    const currentDistance =
+      this.getControllerDistanceToScreen(controllerSource);
+    if (!currentDistance || !this.manipulationStartDistance) return;
+
+    // Calculate movement delta
+    const deltaPos = currentPos.clone().sub(this.lastControllerPosition);
+
+    // Scale movement for screen adjustment (reduce sensitivity)
+    const moveScale = 2.0; // Adjust this value to change movement sensitivity
+    const deltaX = deltaPos.x * moveScale;
+    const deltaY = deltaPos.y * moveScale;
+
+    // Use distance change for scaling (closer = bigger, further = smaller)
+    const distanceDelta = this.manipulationStartDistance - currentDistance;
+    const scaleDelta = distanceDelta * 0.5; // Adjust scale sensitivity
+
+    // Apply position changes
+    this.adjustScreenPosition(deltaX, deltaY, 0);
+
+    // Apply scale changes
+    if (Math.abs(scaleDelta) > 0.01) {
+      this.adjustScreenScale(scaleDelta * 0.1); // Further reduce scale sensitivity
+    }
+
+    // Update tracking position
+    this.lastControllerPosition.copy(currentPos);
+    this.manipulationStartDistance = currentDistance;
+  }
+
+  adjustScreenScale(delta) {
+    this.screenScale = Math.max(0.1, Math.min(3.0, this.screenScale + delta));
+    this.videoScreen.scale.setScalar(this.screenScale);
+    this.vrLog(`Screen scale: ${this.screenScale.toFixed(2)}`);
+  }
+
+  adjustScreenPosition(deltaX, deltaY, deltaZ) {
+    this.screenPosition.x += deltaX;
+    this.screenPosition.y += deltaY;
+    this.screenPosition.z += deltaZ;
+
+    // Clamp position to reasonable bounds
+    this.screenPosition.x = Math.max(-10, Math.min(10, this.screenPosition.x));
+    this.screenPosition.y = Math.max(-5, Math.min(10, this.screenPosition.y));
+    this.screenPosition.z = Math.max(-15, Math.min(-1, this.screenPosition.z));
+
+    this.videoScreen.position.set(
+      this.screenPosition.x,
+      this.screenPosition.y,
+      this.screenPosition.z,
+    );
+
+    this.vrLog(
+      `Screen pos: ${this.screenPosition.x.toFixed(1)}, ${this.screenPosition.y.toFixed(1)}, ${this.screenPosition.z.toFixed(1)}`,
+    );
   }
 
   toggleMenu() {
