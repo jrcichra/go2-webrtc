@@ -169,8 +169,8 @@ class WebXRController {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    // CRITICAL: Don't auto-clear in AR mode
-    this.renderer.autoClear = false;
+    // CRITICAL: For AR passthrough, preserve drawing buffer and don't set clear color
+    this.renderer.preserveDrawingBuffer = true;
     this.renderer.xr.enabled = true;
     document.body.appendChild(this.renderer.domElement);
 
@@ -850,19 +850,6 @@ class WebXRController {
       this.connectToRobot();
     }
 
-    // FIXED: Proper AR passthrough handling
-    if (this.renderer.xr.isPresenting) {
-      const session = this.renderer.xr.getSession();
-      if (session && session.mode === "immersive-ar") {
-        // AR mode - ensure transparent background
-        if (this.scene.background !== null) {
-          this.scene.background = null;
-        }
-        // Clear with transparency
-        this.renderer.clear();
-      }
-    }
-
     // Update video texture
     if (this.videoTexture && this.videoElement && this.videoElement.srcObject) {
       try {
@@ -888,6 +875,7 @@ class WebXRController {
       this.updateMenuRaycasting();
     }
 
+    // Three.js automatically handles XR rendering - just call render
     this.renderer.render(this.scene, this.camera);
   }
 
