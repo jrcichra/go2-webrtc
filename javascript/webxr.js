@@ -231,7 +231,7 @@ class WebXRController {
   }
 
   createVideoScreen() {
-    // Create a group to hold screen + frame + effects
+    // Create a group to hold screen + frame
     this.videoScreenGroup = new THREE.Group();
     this.videoScreenGroup.position.set(0, 2, -5);
     this.scene.add(this.videoScreenGroup);
@@ -241,8 +241,6 @@ class WebXRController {
     const screenMaterial = new THREE.MeshStandardMaterial({
       color: 0xff0000,
       side: THREE.DoubleSide,
-      emissive: 0x222222, // Slight self-illumination
-      emissiveIntensity: 0.2,
     });
     this.videoScreen = new THREE.Mesh(screenGeometry, screenMaterial);
     this.videoScreen.position.z = 0.05; // Slightly forward from frame
@@ -298,36 +296,6 @@ class WebXRController {
     );
     backPanel.position.z = -0.05;
     this.videoScreenGroup.add(backPanel);
-
-    // Ambient glow behind screen
-    const glowGeometry = new THREE.PlaneGeometry(8.5, 5);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x4488ff,
-      transparent: true,
-      opacity: 0.15,
-      side: THREE.BackSide,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.position.z = -0.1;
-    this.videoScreenGroup.add(glow);
-
-    // Add subtle point light in front of screen
-    const screenLight = new THREE.PointLight(0xffffff, 0.5, 10);
-    screenLight.position.set(0, 0, 0.5);
-    this.videoScreenGroup.add(screenLight);
-
-    // Wireframe for debugging (green outline)
-    const wireframeGeometry = new THREE.EdgesGeometry(screenGeometry);
-    const wireframeMaterial = new THREE.LineBasicMaterial({
-      color: 0x00ff00,
-      linewidth: 2,
-    });
-    const wireframe = new THREE.LineSegments(
-      wireframeGeometry,
-      wireframeMaterial,
-    );
-    wireframe.position.z = 0.06; // In front of screen
-    this.videoScreenGroup.add(wireframe);
 
     console.log(
       "Video screen created at position:",
@@ -1427,12 +1395,8 @@ class WebXRController {
       .clone()
       .add(movement.multiplyScalar(speedMultiplier));
 
-    // Apply position with bounds
-    targetObject.position.set(
-      Math.max(-10, Math.min(10, newObjectPos.x)),
-      Math.max(-5, Math.min(10, newObjectPos.y)),
-      Math.max(-15, Math.min(-1, newObjectPos.z)),
-    );
+    // Apply position without bounds - full freedom!
+    targetObject.position.copy(newObjectPos);
 
     // AUTO-ROTATE TO FACE USER while moving
     const cameraPos = new THREE.Vector3();
