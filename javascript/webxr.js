@@ -1206,14 +1206,15 @@ class WebXRController {
         if (targetObject) {
           this.twoHandedManipulation = true;
           this.manipulationStartData = {
-            targetObject: targetObject, // Store which object we're manipulating
+            targetObject: targetObject,
             leftPos: this.getControllerWorldPosition(leftSource),
             rightPos: this.getControllerWorldPosition(rightSource),
             initialDistance: this.getControllerWorldPosition(
               leftSource,
             ).distanceTo(this.getControllerWorldPosition(rightSource)),
-            initialScale: targetObject.scale.x, // Use object's current scale
+            initialScale: targetObject.scale.x,
             initialObjectPos: targetObject.position.clone(),
+            initialRotation: targetObject.rotation.y, // ADD THIS LINE
           };
           this.vrLog("Two-handed manipulation started");
         }
@@ -1279,7 +1280,7 @@ class WebXRController {
     // Calculate current distance between controllers
     const currentDistance = leftPos.distanceTo(rightPos);
 
-    // Calculate scale based on distance change
+    // Calculate scale based on distance change (pinch to scale)
     const distanceRatio =
       currentDistance / this.manipulationStartData.initialDistance;
     const newScale = this.manipulationStartData.initialScale * distanceRatio;
@@ -1312,6 +1313,22 @@ class WebXRController {
       Math.max(-5, Math.min(10, newObjectPos.y)),
       Math.max(-15, Math.min(-1, newObjectPos.z)),
     );
+
+    // ROTATION - calculate angle between controllers
+    const currentVector = new THREE.Vector3().subVectors(rightPos, leftPos);
+    const startVector = new THREE.Vector3().subVectors(
+      this.manipulationStartData.rightPos,
+      this.manipulationStartData.leftPos,
+    );
+
+    // Calculate rotation angle in the XZ plane (horizontal rotation)
+    const currentAngle = Math.atan2(currentVector.z, currentVector.x);
+    const startAngle = Math.atan2(startVector.z, startVector.x);
+    const rotationDelta = currentAngle - startAngle;
+
+    // Apply rotation
+    targetObject.rotation.y =
+      (this.manipulationStartData.initialRotation || 0) + rotationDelta;
 
     // Update start data for continuous manipulation
     this.manipulationStartData.leftPos = leftPos;
