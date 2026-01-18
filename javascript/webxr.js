@@ -22,6 +22,9 @@ class WebXRController {
     this.debugLogs = [];
     this.maxDebugLogs = 10;
 
+    // Microphone settings
+    this.microphoneEnabled = false;
+
     // Menu system properties
     this.menuVisible = false;
     this.selectedMenuItem = -1;
@@ -97,17 +100,51 @@ class WebXRController {
       return;
     }
 
-    // Check for AR support (passthrough)
+    // Check for AR and VR support
     const isARSupported = await navigator.xr.isSessionSupported("immersive-ar");
-    if (!isARSupported) {
-      console.error("Immersive AR not supported");
+    const isVRSupported = await navigator.xr.isSessionSupported("immersive-vr");
+
+    console.log(
+      `AR supported: ${isARSupported}, VR supported: ${isVRSupported}`,
+    );
+
+    if (!isARSupported && !isVRSupported) {
+      console.error("Neither Immersive AR nor VR supported");
       return;
     }
 
     // Initialize Three.js scene
     this.setupScene();
 
-    document.body.appendChild(VRButton.createButton(this.renderer));
+    // Create appropriate buttons based on device capabilities
+    const buttonContainer = document.createElement("div");
+    buttonContainer.style.position = "absolute";
+    buttonContainer.style.bottom = "20px";
+    buttonContainer.style.left = "50%";
+    buttonContainer.style.transform = "translateX(-50%)";
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.gap = "10px";
+
+    if (isARSupported) {
+      // Create AR button for passthrough
+      const arButton = VRButton.createButton(this.renderer, {
+        referenceSpaceType: "local-floor",
+        mode: "immersive-ar",
+      });
+      arButton.textContent = "Enter AR (Passthrough)";
+      arButton.style.backgroundColor = "#4CAF50";
+      buttonContainer.appendChild(arButton);
+    }
+
+    if (isVRSupported) {
+      // Create VR button
+      const vrButton = VRButton.createButton(this.renderer);
+      vrButton.textContent = "Enter VR";
+      vrButton.style.backgroundColor = "#2196F3";
+      buttonContainer.appendChild(vrButton);
+    }
+
+    document.body.appendChild(buttonContainer);
 
     this.renderer.setAnimationLoop((timestamp, frame) => {
       this.render(timestamp, frame);
@@ -727,15 +764,19 @@ class WebXRController {
         this.vrLog(`Connection: ${this.rtc.pc.connectionState}`);
       });
 
-      // CRITICAL: Enable microphone BEFORE initSDP so it's included in the offer
-      try {
-        await this.rtc.enableMicrophone();
-        this.vrLog("Microphone enabled");
-      } catch (error) {
-        console.log(
-          "Microphone access denied, robot may not respond to movement commands",
-        );
-        this.vrLog("Mic denied - movement may not work");
+      // CRITICAL: Enable microphone BEFORE initSDP so it's included in the offer (only if enabled)
+      if (this.microphoneEnabled) {
+        try {
+          await this.rtc.enableMicrophone();
+          this.vrLog("Microphone enabled");
+        } catch (error) {
+          console.log(
+            "Microphone access denied, robot may not respond to movement commands",
+          );
+          this.vrLog("Mic denied - movement may not work");
+        }
+      } else {
+        this.vrLog("Microphone disabled by user setting");
       }
 
       // NOW create the SDP offer with the microphone track included
@@ -837,6 +878,13 @@ class WebXRController {
     if (!frame) return;
 
     if (this.renderer.xr.isPresenting && !this.isConnected && !this.rtc) {
+      // Read microphone setting from checkbox before connecting
+      const micCheckbox = document.getElementById("enableMicrophone");
+      this.microphoneEnabled = micCheckbox ? micCheckbox.checked : false;
+
+      this.vrLog(
+        `Microphone setting: ${this.microphoneEnabled ? "enabled" : "disabled"}`,
+      );
       this.connectToRobot();
     }
 
