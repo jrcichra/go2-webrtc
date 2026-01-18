@@ -846,7 +846,7 @@ class WebXRController {
     const material = new THREE.LineBasicMaterial({
       color: 0x00ff00,
       linewidth: 2,
-      opacity: 0.5, // Semi-transparent when not hitting anything
+      opacity: 0.5,
       transparent: true,
     });
 
@@ -862,40 +862,77 @@ class WebXRController {
     dot.position.set(0, 0, -5);
     laser.add(dot);
 
-    laser.visible = true; // Always visible now!
+    laser.visible = true;
     controller.add(laser);
 
     return laser;
   }
 
-  createLaserPointer(controller) {
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array([0, 0, 0, 0, 0, -5]);
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  updateLaserPointers() {
+    if (!this.renderer.xr.isPresenting) return;
 
-    const material = new THREE.LineBasicMaterial({
-      color: 0x00ff00,
-      linewidth: 2,
-      opacity: 0.5, // Semi-transparent when not hitting anything
-      transparent: true,
+    // Update both controller lasers
+    [0, 1].forEach((controllerIndex) => {
+      const controller = this.controllers[controllerIndex];
+      if (!controller) return;
+
+      const laser = controller.children.find((child) => child.type === "Line");
+      if (!laser) return;
+
+      // Set up raycaster
+      const raycaster = new THREE.Raycaster();
+      const tempMatrix = new THREE.Matrix4();
+      tempMatrix.identity().extractRotation(controller.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+      // Check what we're hitting
+      const interactableObjects = [this.videoScreen, ...this.uiPanels];
+      if (this.menuVisible && this.categoryButtons) {
+        this.categoryButtons.forEach((b) => interactableObjects.push(b.panel));
+      }
+      if (this.menuVisible && this.commandButtons) {
+        this.commandButtons.forEach((b) => interactableObjects.push(b.panel));
+      }
+
+      const intersects = raycaster.intersectObjects(interactableObjects, false);
+
+      // Update laser appearance based on what we hit
+      if (intersects.length > 0) {
+        const distance = intersects[0].distance;
+
+        // Update laser length
+        const positions = laser.geometry.attributes.position;
+        positions.setXYZ(1, 0, 0, -distance);
+        positions.needsUpdate = true;
+
+        // Bright cyan when hitting
+        laser.material.opacity = 0.9;
+        laser.material.color.setHex(0x00ffff);
+
+        const dot = laser.children[0];
+        if (dot) {
+          dot.position.z = -distance;
+          dot.material.opacity = 1.0;
+          dot.material.color.setHex(0x00ffff);
+        }
+      } else {
+        // Default green appearance
+        const positions = laser.geometry.attributes.position;
+        positions.setXYZ(1, 0, 0, -5);
+        positions.needsUpdate = true;
+
+        laser.material.opacity = 0.5;
+        laser.material.color.setHex(0x00ff00);
+
+        const dot = laser.children[0];
+        if (dot) {
+          dot.position.z = -5;
+          dot.material.opacity = 0.6;
+          dot.material.color.setHex(0x00ff00);
+        }
+      }
     });
-
-    const laser = new THREE.Line(geometry, material);
-
-    const dotGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-    const dotMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ff00,
-      transparent: true,
-      opacity: 0.8,
-    });
-    const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-    dot.position.set(0, 0, -5);
-    laser.add(dot);
-
-    laser.visible = true; // Always visible now!
-    controller.add(laser);
-
-    return laser;
   }
 
   render(timestamp, frame) {
